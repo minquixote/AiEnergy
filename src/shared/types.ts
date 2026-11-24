@@ -15,7 +15,7 @@ export interface ProviderUsage {
 
 export type EnergyLevel = 'high' | 'medium' | 'low' | 'unknown'
 
-export type RefreshIntervalMinutes = 5 | 10 | 15 | 30
+export type RefreshIntervalMinutes = 1 | 5 | 10 | 15
 
 export type ThemePreference = 'dark' | 'light' | 'system'
 
@@ -43,7 +43,15 @@ export interface AppSettings {
   enabledProviders: Record<ProviderId, boolean>
 }
 
+export interface TrayItemSummary {
+  id: ProviderId
+  status: ProviderStatus
+  remainingPct: number | null
+  level: EnergyLevel
+}
+
 export interface TraySummary {
+  items: TrayItemSummary[]
   lowestRemainingPct: number | null
   lowestProviderId: ProviderId | null
   level: EnergyLevel

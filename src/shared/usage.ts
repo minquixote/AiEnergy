@@ -1,5 +1,11 @@
 import { ENERGY_THRESHOLDS, PROVIDER_ORDER } from './constants'
-import type { EnergyLevel, ProviderId, ProviderUsage, TraySummary } from './types'
+import type {
+  EnergyLevel,
+  ProviderId,
+  ProviderUsage,
+  TrayItemSummary,
+  TraySummary
+} from './types'
 
 export function clampPercentage(value: number): number {
   if (!Number.isFinite(value)) return 0
@@ -37,6 +43,7 @@ export function computeTraySummary(
   usages: Record<ProviderId, ProviderUsage>,
   enabledProviders: Record<ProviderId, boolean>
 ): TraySummary {
+  const items: TrayItemSummary[] = []
   let lowestRemainingPct: number | null = null
   let lowestProviderId: ProviderId | null = null
   let connectedCount = 0
@@ -47,10 +54,19 @@ export function computeTraySummary(
     enabledCount += 1
 
     const usage = usages[id]
-    if (!usage || usage.status !== 'ok' || usage.sessionRemainingPct === null) continue
+    const isOk = Boolean(usage && usage.status === 'ok' && usage.sessionRemainingPct !== null)
+    const pct = isOk && usage.sessionRemainingPct !== null ? clampPercentage(usage.sessionRemainingPct) : null
+
+    items.push({
+      id,
+      status: usage?.status ?? 'error',
+      remainingPct: pct,
+      level: getEnergyLevel(pct)
+    })
+
+    if (!isOk || pct === null) continue
 
     connectedCount += 1
-    const pct = clampPercentage(usage.sessionRemainingPct)
     if (lowestRemainingPct === null || pct < lowestRemainingPct) {
       lowestRemainingPct = pct
       lowestProviderId = id
@@ -58,6 +74,7 @@ export function computeTraySummary(
   }
 
   return {
+    items,
     lowestRemainingPct,
     lowestProviderId,
     level: getEnergyLevel(lowestRemainingPct),

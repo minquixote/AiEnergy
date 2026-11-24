@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { formatMacTrayTitle, renderBatteryIconPng } from './trayIcon'
+import {
+  formatTrayTooltip,
+  renderBatteryIconPng,
+  renderMultiProviderTrayPng
+} from './trayIcon'
+
+const PNG_SIG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
 
 describe('trayIcon PNG generator', () => {
-  it('renders valid 1x and 2x Retina PNG buffers with exact dimensions', () => {
+  it('renders valid 1x and 2x compact single battery PNG buffers', () => {
     const png1x = renderBatteryIconPng({
       percentage: 72,
       level: 'high',
@@ -16,38 +22,82 @@ describe('trayIcon PNG generator', () => {
       scale: 2
     })
 
-    const pngSig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
-    expect(png1x.subarray(0, 8).equals(pngSig)).toBe(true)
+    expect(png1x.subarray(0, 8).equals(PNG_SIG)).toBe(true)
     expect(png1x.readUInt32BE(16)).toBe(24)
     expect(png1x.readUInt32BE(20)).toBe(16)
 
-    expect(png2x.subarray(0, 8).equals(pngSig)).toBe(true)
+    expect(png2x.subarray(0, 8).equals(PNG_SIG)).toBe(true)
     expect(png2x.readUInt32BE(16)).toBe(48)
     expect(png2x.readUInt32BE(20)).toBe(32)
   })
 
-  it('formats macOS menu bar percentage title according to toggle state', () => {
-    const summary = {
-      lowestRemainingPct: 38,
-      lowestProviderId: 'gemini' as const,
-      level: 'medium' as const,
-      connectedCount: 2,
-      enabledCount: 2
-    }
+  it('renders multi-provider menu bar strip scaling width with enabled platform count', () => {
+    const twoProviders = renderMultiProviderTrayPng({
+      items: [
+        { id: 'chatgpt', status: 'ok', remainingPct: 72, level: 'high' },
+        { id: 'gemini', status: 'ok', remainingPct: 38, level: 'medium' }
+      ],
+      showPercentage: true,
+      isDarkTheme: true,
+      scale: 2
+    })
 
-    expect(formatMacTrayTitle(summary, true)).toBe(' 38%')
-    expect(formatMacTrayTitle(summary, false)).toBe('')
+    const threeProviders = renderMultiProviderTrayPng({
+      items: [
+        { id: 'chatgpt', status: 'ok', remainingPct: 100, level: 'high' },
+        { id: 'gemini', status: 'ok', remainingPct: 38, level: 'medium' },
+        { id: 'claude', status: 'ok', remainingPct: 14, level: 'low' }
+      ],
+      showPercentage: true,
+      isDarkTheme: false,
+      scale: 2
+    })
+
+    const barsOnly = renderMultiProviderTrayPng({
+      items: [
+        { id: 'chatgpt', status: 'ok', remainingPct: 72, level: 'high' },
+        { id: 'gemini', status: 'ok', remainingPct: 38, level: 'medium' }
+      ],
+      showPercentage: false,
+      isDarkTheme: true,
+      scale: 2
+    })
+
+    expect(twoProviders.png.subarray(0, 8).equals(PNG_SIG)).toBe(true)
+    expect(twoProviders.png.readUInt32BE(16)).toBe(twoProviders.pixelWidth)
+    expect(twoProviders.png.readUInt32BE(20)).toBe(twoProviders.pixelHeight)
+    expect(twoProviders.logicalHeight).toBe(20)
+    expect(twoProviders.pixelHeight).toBe(40)
+
+    expect(threeProviders.logicalWidth).toBeGreaterThan(twoProviders.logicalWidth)
+    expect(barsOnly.logicalWidth).toBeLessThan(twoProviders.logicalWidth)
+  })
+
+  it('falls back to a single compact icon when no providers are enabled', () => {
+    const empty = renderMultiProviderTrayPng({
+      items: [],
+      showPercentage: true,
+      isDarkTheme: true,
+      scale: 2
+    })
+    expect(empty.png.subarray(0, 8).equals(PNG_SIG)).toBe(true)
+    expect(empty.logicalWidth).toBe(24)
+    expect(empty.logicalHeight).toBe(16)
+  })
+
+  it('formats multi-provider hover tooltip cleanly', () => {
+    const names = { chatgpt: 'ChatGPT', gemini: 'Gemini', claude: 'Claude' }
     expect(
-      formatMacTrayTitle(
-        {
-          lowestRemainingPct: null,
-          lowestProviderId: null,
-          level: 'unknown',
-          connectedCount: 0,
-          enabledCount: 2
-        },
-        true
+      formatTrayTooltip(
+        'AI Energy Bar',
+        [
+          { id: 'chatgpt', status: 'ok', remainingPct: 72, level: 'high' },
+          { id: 'gemini', status: 'auth_required', remainingPct: null, level: 'unknown' }
+        ],
+        names
       )
-    ).toBe(' --%')
+    ).toBe('AI Energy Bar · ChatGPT 72% · Gemini 재로그인 필요')
+
+    expect(formatTrayTooltip('AI Energy Bar', [], names)).toBe('AI Energy Bar · 활성 플랫폼 없음')
   })
 })

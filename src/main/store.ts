@@ -1,11 +1,23 @@
 import Store from 'electron-store'
-import { DEFAULT_SETTINGS } from '../shared/constants'
-import type { AppSettings, ProviderId, ProviderUsage } from '../shared/types'
+import { DEFAULT_SETTINGS, REFRESH_INTERVAL_OPTIONS } from '../shared/constants'
+import type {
+  AppSettings,
+  ProviderId,
+  ProviderUsage,
+  RefreshIntervalMinutes
+} from '../shared/types'
 
 interface PersistedSchema {
   settings: AppSettings
   cachedUsages: Record<ProviderId, ProviderUsage> | null
   lastUpdatedAt: number | null
+}
+
+function sanitizeRefreshInterval(value: unknown, fallback: RefreshIntervalMinutes): RefreshIntervalMinutes {
+  if (typeof value === 'number' && (REFRESH_INTERVAL_OPTIONS as readonly number[]).includes(value)) {
+    return value as RefreshIntervalMinutes
+  }
+  return fallback
 }
 
 export function mergeSettings(
@@ -15,12 +27,20 @@ export function mergeSettings(
   if (!patch) {
     return {
       ...base,
+      refreshIntervalMinutes: sanitizeRefreshInterval(
+        base.refreshIntervalMinutes,
+        DEFAULT_SETTINGS.refreshIntervalMinutes
+      ),
       enabledProviders: { ...base.enabledProviders }
     }
   }
   return {
     ...base,
     ...patch,
+    refreshIntervalMinutes: sanitizeRefreshInterval(
+      patch.refreshIntervalMinutes ?? base.refreshIntervalMinutes,
+      DEFAULT_SETTINGS.refreshIntervalMinutes
+    ),
     enabledProviders: {
       ...base.enabledProviders,
       ...(patch.enabledProviders ?? {})

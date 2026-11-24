@@ -1,7 +1,11 @@
 import { Menu, Tray, app, nativeImage, nativeTheme } from 'electron'
 import { APP_NAME, PROVIDER_META } from '../shared/constants'
-import type { AppSettings, TraySummary } from '../shared/types'
-import { formatMacTrayTitle, renderBatteryIconPng } from './trayIcon'
+import type { AppSettings, ProviderId, TraySummary } from '../shared/types'
+import {
+  formatTrayTooltip,
+  renderBatteryIconPng,
+  renderMultiProviderTrayPng
+} from './trayIcon'
 
 export interface TrayCallbacks {
   onTogglePopover: () => void
@@ -9,34 +13,54 @@ export interface TrayCallbacks {
   onRefresh: () => void
 }
 
-function createTrayNativeImage(summary: TraySummary, isDarkTheme: boolean): Electron.NativeImage {
+const PROVIDER_NAMES: Record<ProviderId, string> = {
+  chatgpt: PROVIDER_META.chatgpt.name,
+  gemini: PROVIDER_META.gemini.name,
+  claude: PROVIDER_META.claude.name
+}
+
+function createTrayNativeImage(
+  summary: TraySummary,
+  showPercentage: boolean,
+  isDarkTheme: boolean
+): Electron.NativeImage {
   const image = nativeImage.createEmpty()
 
-  const png1x = renderBatteryIconPng({
-    percentage: summary.lowestRemainingPct,
-    level: summary.level,
+  // Windows system tray enforces a square 16x16 slot, so use compact summary battery there;
+  // macOS menu bar natively renders wide multi-platform Retina strips cleanly.
+  if (process.platform === 'win32') {
+    const png1x = renderBatteryIconPng({
+      percentage: summary.lowestRemainingPct,
+      level: summary.level,
+      isDarkTheme,
+      scale: 1
+    })
+    const png2x = renderBatteryIconPng({
+      percentage: summary.lowestRemainingPct,
+      level: summary.level,
+      isDarkTheme,
+      scale: 2
+    })
+    image.addRepresentation({ scaleFactor: 1, buffer: png1x })
+    image.addRepresentation({ scaleFactor: 2, buffer: png2x })
+    return image
+  }
+
+  const r1x = renderMultiProviderTrayPng({
+    items: summary.items,
+    showPercentage,
     isDarkTheme,
     scale: 1
   })
-  const png2x = renderBatteryIconPng({
-    percentage: summary.lowestRemainingPct,
-    level: summary.level,
+  const r2x = renderMultiProviderTrayPng({
+    items: summary.items,
+    showPercentage,
     isDarkTheme,
     scale: 2
   })
 
-  image.addRepresentation({
-    scaleFactor: 1,
-    width: 24,
-    height: 16,
-    buffer: png1x
-  })
-  image.addRepresentation({
-    scaleFactor: 2,
-    width: 48,
-    height: 32,
-    buffer: png2x
-  })
+  image.addRepresentation({ scaleFactor: 1, buffer: r1x.png })
+  image.addRepresentation({ scaleFactor: 2, buffer: r2x.png })
 
   return image
 }
@@ -47,12 +71,14 @@ export class TrayManager {
   constructor(callbacks: TrayCallbacks) {
     const placeholder = createTrayNativeImage(
       {
+        items: [],
         lowestRemainingPct: null,
         lowestProviderId: null,
         level: 'unknown',
         connectedCount: 0,
-        enabledCount: 3
+        enabledCount: 0
       },
+      true,
       nativeTheme.shouldUseDarkColors
     )
 
@@ -90,20 +116,15 @@ export class TrayManager {
 
   update(summary: TraySummary, settings: AppSettings): void {
     const isDark = nativeTheme.shouldUseDarkColors
-    const icon = createTrayNativeImage(summary, isDark)
+    const icon = createTrayNativeImage(summary, settings.showTrayPercentage, isDark)
     this.tray.setImage(icon)
 
+    // Percentage numbers are now drawn inside each platform's battery graphic
     if (process.platform === 'darwin') {
-      const title = formatMacTrayTitle(summary, settings.showTrayPercentage)
-      this.tray.setTitle(title, { fontType: 'monospacedDigit' })
+      this.tray.setTitle('')
     }
 
-    if (summary.lowestRemainingPct !== null && summary.lowestProviderId !== null) {
-      const providerName = PROVIDER_META[summary.lowestProviderId].name
-      this.tray.setToolTip(`${APP_NAME} · 최저 ${summary.lowestRemainingPct}% (${providerName})`)
-    } else {
-      this.tray.setToolTip(`${APP_NAME} · 연동 대기 중`)
-    }
+    this.tray.setToolTip(formatTrayTooltip(APP_NAME, summary.items, PROVIDER_NAMES))
   }
 
   destroy(): void {

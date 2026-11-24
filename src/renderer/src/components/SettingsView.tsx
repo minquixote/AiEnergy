@@ -245,16 +245,16 @@ export function SettingsView({
           <div className="flex items-center justify-between gap-2">
             <div>
               <div className="text-[12px] font-medium">
-                {platform === 'darwin' ? '메뉴바에 최저 % 표시' : '메뉴바 최저 % 표시 (macOS)'}
+                {platform === 'darwin' ? '메뉴바 그래픽 안에 % 표시' : '메뉴바 % 표시 (macOS)'}
               </div>
               <div className="text-[10.5px]" style={{ color: 'var(--text-muted)' }}>
-                아이콘 옆에 가장 낮은 잔여량 텍스트 표시
+                활성화된 플랫폼별 배터리 내부에 잔여 % 숫자 표시
               </div>
             </div>
             <ToggleSwitch
               id="toggle-tray-percentage"
               checked={settings.showTrayPercentage}
-              label="메뉴바 최저 퍼센트 텍스트 표시"
+              label="메뉴바 배터리 그래픽 내부 퍼센트 표시"
               onChange={(next) => onUpdateSettings({ showTrayPercentage: next })}
             />
           </div>

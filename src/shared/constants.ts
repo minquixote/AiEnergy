@@ -37,7 +37,7 @@ export const PROVIDER_META: Record<ProviderId, ProviderMeta> = {
   }
 }
 
-export const REFRESH_INTERVAL_OPTIONS: readonly RefreshIntervalMinutes[] = [5, 10, 15, 30]
+export const REFRESH_INTERVAL_OPTIONS: readonly RefreshIntervalMinutes[] = [1, 5, 10, 15]
 
 export const MANUAL_REFRESH_COOLDOWN_MS = 30_000
 

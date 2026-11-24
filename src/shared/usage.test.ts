@@ -48,7 +48,7 @@ describe('percentage calculations', () => {
 })
 
 describe('tray summary computation', () => {
-  it('selects the lowest remaining percentage among enabled connected providers', () => {
+  it('selects the lowest remaining percentage and lists only enabled providers in order', () => {
     const usages = buildMockUsages('balanced', 1_700_000_000_000)
 
     const allEnabled = computeTraySummary(usages, {
@@ -60,8 +60,13 @@ describe('tray summary computation', () => {
     expect(allEnabled.lowestRemainingPct).toBe(14)
     expect(allEnabled.level).toBe('low')
     expect(allEnabled.connectedCount).toBe(3)
+    expect(allEnabled.items.map((item) => [item.id, item.remainingPct])).toEqual([
+      ['chatgpt', 72],
+      ['gemini', 38],
+      ['claude', 14]
+    ])
 
-    // When unsubscribed Claude is hidden, Gemini (38%) becomes the lowest
+    // When unsubscribed Claude is hidden, only ChatGPT + Gemini appear in tray items and Gemini (38%) is lowest
     const withoutClaude = computeTraySummary(usages, {
       chatgpt: true,
       gemini: true,
@@ -72,6 +77,7 @@ describe('tray summary computation', () => {
     expect(withoutClaude.level).toBe('medium')
     expect(withoutClaude.connectedCount).toBe(2)
     expect(withoutClaude.enabledCount).toBe(2)
+    expect(withoutClaude.items.map((item) => item.id)).toEqual(['chatgpt', 'gemini'])
   })
 
   it('ignores auth_required and error providers when picking the lowest percentage', () => {
@@ -86,6 +92,11 @@ describe('tray summary computation', () => {
     expect(summary.lowestRemainingPct).toBe(61)
     expect(summary.level).toBe('high')
     expect(summary.connectedCount).toBe(1)
+    expect(summary.items.map((item) => [item.id, item.status])).toEqual([
+      ['chatgpt', 'ok'],
+      ['gemini', 'auth_required'],
+      ['claude', 'error']
+    ])
   })
 })
 
