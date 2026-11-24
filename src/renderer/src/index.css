@@ -1,0 +1,176 @@
+@import "tailwindcss";
+
+:root {
+  --surface-shell: #14161a;
+  --surface-card: #1c1f25;
+  --surface-card-hover: #22262e;
+  --surface-subtle: #252932;
+  --surface-track: #101216;
+  --border-hairline: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --text-primary: #f3f5f8;
+  --text-secondary: #9aa2b1;
+  --text-muted: #6e7685;
+
+  --energy-high: #22c55e;
+  --energy-high-soft: rgba(34, 197, 94, 0.14);
+  --energy-high-text: #4ade80;
+
+  --energy-medium: #f59e0b;
+  --energy-medium-soft: rgba(245, 158, 11, 0.15);
+  --energy-medium-text: #fbbf24;
+
+  --energy-low: #ef4444;
+  --energy-low-soft: rgba(239, 68, 68, 0.15);
+  --energy-low-text: #f87171;
+
+  --energy-unknown: #71717a;
+  --energy-unknown-soft: rgba(113, 113, 122, 0.16);
+  --energy-unknown-text: #a1a1aa;
+}
+
+:root[data-theme='light'] {
+  --surface-shell: #f5f6f8;
+  --surface-card: #ffffff;
+  --surface-card-hover: #f9fafb;
+  --surface-subtle: #ebedf2;
+  --surface-track: #e4e7ee;
+  --border-hairline: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(15, 23, 42, 0.15);
+  --text-primary: #11141a;
+  --text-secondary: #525b6c;
+  --text-muted: #7c8596;
+
+  --energy-high: #16a34a;
+  --energy-high-soft: rgba(22, 163, 74, 0.12);
+  --energy-high-text: #15803d;
+
+  --energy-medium: #d97706;
+  --energy-medium-soft: rgba(217, 119, 6, 0.13);
+  --energy-medium-text: #b45309;
+
+  --energy-low: #dc2626;
+  --energy-low-soft: rgba(220, 38, 38, 0.12);
+  --energy-low-text: #b91c1c;
+
+  --energy-unknown: #64748b;
+  --energy-unknown-soft: rgba(100, 116, 139, 0.12);
+  --energy-unknown-text: #475569;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  background: transparent;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    'SF Pro Text',
+    'Apple SD Gothic Neo',
+    'Pretendard Variable',
+    'Segoe UI',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  word-break: keep-all;
+  user-select: none;
+  overflow: hidden;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.popover-shell {
+  width: 340px;
+  background: var(--surface-shell);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 18px 40px -12px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+:root[data-theme='light'] .popover-shell {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 16px 36px -12px rgba(15, 23, 42, 0.18);
+}
+
+.surface-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-hairline);
+  border-radius: 11px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease;
+}
+
+.surface-card-interactive {
+  cursor: pointer;
+}
+
+.surface-card-interactive:hover {
+  background: var(--surface-card-hover);
+  border-color: var(--border-strong);
+}
+
+.surface-card-interactive:active {
+  transform: scale(0.99);
+}
+
+.energy-track {
+  background: var(--surface-track);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+:root[data-theme='light'] .energy-track {
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.energy-fill {
+  position: relative;
+  transition:
+    width 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 240ms ease;
+}
+
+.energy-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 50% 0;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0));
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.settings-scroll {
+  max-height: 495px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.settings-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.settings-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+
+.settings-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
