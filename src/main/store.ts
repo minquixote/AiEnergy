@@ -7,13 +7,19 @@ import type {
   RefreshIntervalMinutes
 } from '../shared/types'
 
+const CURRENT_SCHEMA_VERSION = 2
+
 interface PersistedSchema {
+  schemaVersion: number
   settings: AppSettings
   cachedUsages: Record<ProviderId, ProviderUsage> | null
   lastUpdatedAt: number | null
 }
 
-function sanitizeRefreshInterval(value: unknown, fallback: RefreshIntervalMinutes): RefreshIntervalMinutes {
+function sanitizeRefreshInterval(
+  value: unknown,
+  fallback: RefreshIntervalMinutes
+): RefreshIntervalMinutes {
   if (typeof value === 'number' && (REFRESH_INTERVAL_OPTIONS as readonly number[]).includes(value)) {
     return value as RefreshIntervalMinutes
   }
@@ -55,11 +61,29 @@ export class AppStore {
     this.store = new Store<PersistedSchema>({
       name: 'ai-energy-bar-config',
       defaults: {
+        schemaVersion: CURRENT_SCHEMA_VERSION,
         settings: DEFAULT_SETTINGS,
         cachedUsages: null,
         lastUpdatedAt: null
       }
     })
+
+    this.migrateIfNeeded()
+  }
+
+  private migrateIfNeeded(): void {
+    const version = this.store.get('schemaVersion', 1)
+    if (version < CURRENT_SCHEMA_VERSION) {
+      // Phase 1 -> Phase 2 migration: switch default to live mode and clear Phase 1 mock cache
+      const current = this.getSettings()
+      this.store.set('settings', {
+        ...current,
+        dataSourceMode: 'live'
+      })
+      this.store.set('cachedUsages', null)
+      this.store.set('lastUpdatedAt', null)
+      this.store.set('schemaVersion', CURRENT_SCHEMA_VERSION)
+    }
   }
 
   getSettings(): AppSettings {
@@ -80,6 +104,11 @@ export class AppStore {
   setCachedUsages(usages: Record<ProviderId, ProviderUsage>, updatedAt: number): void {
     this.store.set('cachedUsages', usages)
     this.store.set('lastUpdatedAt', updatedAt)
+  }
+
+  clearCachedUsages(): void {
+    this.store.set('cachedUsages', null)
+    this.store.set('lastUpdatedAt', null)
   }
 
   getLastUpdatedAt(): number | null {

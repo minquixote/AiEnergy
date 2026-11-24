@@ -1,5 +1,6 @@
 import { LogIn, LogOut, Monitor, Moon, Sun } from 'lucide-react'
 import {
+  LIVE_SUPPORTED_PROVIDERS,
   MOCK_SCENARIOS,
   PROVIDER_META,
   PROVIDER_ORDER,
@@ -7,6 +8,7 @@ import {
 } from '@shared/constants'
 import type {
   AppSettings,
+  DataSourceMode,
   HostPlatform,
   MockScenarioId,
   ProviderId,
@@ -78,8 +80,45 @@ export function SettingsView({
     { id: 'system', label: '시스템', Icon: Monitor }
   ]
 
+  const sourceOptions: ReadonlyArray<{ id: DataSourceMode; label: string }> = [
+    { id: 'live', label: '실연동 (LIVE)' },
+    { id: 'mock', label: 'Mock 테스트' }
+  ]
+
   return (
     <div className="settings-scroll flex flex-col gap-3 p-3">
+      {/* Section 0: Data source mode */}
+      <section className="surface-card p-3">
+        <div className="mb-1.5 flex items-center justify-between">
+          <h2 className="text-[11.5px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
+            데이터 소스
+          </h2>
+          <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            ChatGPT 실연동 지원
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {sourceOptions.map((opt) => {
+            const active = settings.dataSourceMode === opt.id
+            return (
+              <button
+                key={opt.id}
+                id={`btn-source-${opt.id}`}
+                type="button"
+                onClick={() => onUpdateSettings({ dataSourceMode: opt.id })}
+                className="rounded-lg py-1.5 text-[11.5px] font-medium transition-colors cursor-pointer"
+                style={{
+                  backgroundColor: active ? 'var(--text-primary)' : 'var(--surface-subtle)',
+                  color: active ? 'var(--surface-shell)' : 'var(--text-secondary)'
+                }}
+              >
+                {opt.label}
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
       {/* Section 1: Provider login & visibility */}
       <section className="surface-card p-3">
         <div className="mb-2.5 flex items-center justify-between">
@@ -97,6 +136,16 @@ export function SettingsView({
             const enabled = settings.enabledProviders[id]
             const usage = usages[id]
             const isConnected = usage.status === 'ok'
+            const isLiveSupported = LIVE_SUPPORTED_PROVIDERS.includes(id)
+            const isPhase3Pending = settings.dataSourceMode === 'live' && !isLiveSupported
+
+            const subLabel = !enabled
+              ? '숨김'
+              : isPhase3Pending
+                ? 'Phase 3 예정'
+                : isConnected
+                  ? '연동됨'
+                  : '로그인 필요'
 
             return (
               <div
@@ -114,13 +163,13 @@ export function SettingsView({
                       {meta.name}
                     </div>
                     <div className="truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                      {enabled ? (isConnected ? '연동됨' : '연결 필요') : '숨김'}
+                      {subLabel}
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {enabled && (
+                  {enabled && !isPhase3Pending && (
                     <>
                       <button
                         id={`btn-login-${id}`}

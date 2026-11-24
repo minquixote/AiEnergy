@@ -17,7 +17,7 @@ export const PROVIDER_META: Record<ProviderId, ProviderMeta> = {
     planLabel: 'Plus / Pro',
     partition: 'persist:chatgpt',
     loginUrl: 'https://chatgpt.com',
-    usageUrl: 'https://chatgpt.com'
+    usageUrl: 'https://chatgpt.com/codex/settings/usage'
   },
   gemini: {
     id: 'gemini',
@@ -36,6 +36,8 @@ export const PROVIDER_META: Record<ProviderId, ProviderMeta> = {
     usageUrl: 'https://claude.ai/settings/usage'
   }
 }
+
+export const LIVE_SUPPORTED_PROVIDERS: readonly ProviderId[] = ['chatgpt']
 
 export const REFRESH_INTERVAL_OPTIONS: readonly RefreshIntervalMinutes[] = [1, 5, 10, 15]
 
@@ -60,7 +62,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: true,
   showTrayPercentage: true,
   launchAtLogin: false,
-  dataSourceMode: 'mock',
+  dataSourceMode: 'live',
   mockScenario: 'balanced',
   enabledProviders: {
     chatgpt: true,

@@ -1,6 +1,6 @@
-import { AlertCircle, ArrowUpRight, KeyRound } from 'lucide-react'
-import { PROVIDER_META } from '@shared/constants'
-import type { EnergyLevel, ProviderId, ProviderUsage } from '@shared/types'
+import { AlertCircle, ArrowUpRight, Clock, KeyRound } from 'lucide-react'
+import { LIVE_SUPPORTED_PROVIDERS, PROVIDER_META } from '@shared/constants'
+import type { DataSourceMode, EnergyLevel, ProviderId, ProviderUsage } from '@shared/types'
 import {
   clampPercentage,
   formatCountdown,
@@ -13,8 +13,10 @@ import { ProviderIcon } from './ProviderIcon'
 
 interface ProviderCardProps {
   usage: ProviderUsage
+  dataSourceMode: DataSourceMode
   now: number
   onOpenLogin: (providerId: ProviderId) => void
+  onOpenSettings: () => void
 }
 
 const LEVEL_TEXT_COLOR: Record<EnergyLevel, string> = {
@@ -31,8 +33,16 @@ const LEVEL_SOFT_BG: Record<EnergyLevel, string> = {
   unknown: 'var(--energy-unknown-soft)'
 }
 
-export function ProviderCard({ usage, now, onOpenLogin }: ProviderCardProps) {
+export function ProviderCard({
+  usage,
+  dataSourceMode,
+  now,
+  onOpenLogin,
+  onOpenSettings
+}: ProviderCardProps) {
   const meta = PROVIDER_META[usage.id]
+  const isPhase3Pending =
+    dataSourceMode === 'live' && !LIVE_SUPPORTED_PROVIDERS.includes(usage.id)
   const isActionable = usage.status !== 'ok'
 
   const sessionPct =
@@ -52,6 +62,14 @@ export function ProviderCard({ usage, now, onOpenLogin }: ProviderCardProps) {
   const weeklyResetLabel = formatResetTime(usage.weeklyResetAt, true)
 
   const badge = (() => {
+    if (isPhase3Pending) {
+      return {
+        label: 'Phase 3 예정',
+        dotColor: 'var(--energy-unknown)',
+        textColor: 'var(--energy-unknown-text)',
+        bgColor: 'var(--energy-unknown-soft)'
+      }
+    }
     if (usage.status === 'ok') {
       return {
         label: '연동됨',
@@ -193,12 +211,18 @@ export function ProviderCard({ usage, now, onOpenLogin }: ProviderCardProps) {
             }}
           >
             <span className="flex items-center gap-1.5">
-              {usage.status === 'auth_required' ? (
+              {isPhase3Pending ? (
+                <Clock className="h-3.5 w-3.5" style={{ color: 'var(--text-secondary)' }} />
+              ) : usage.status === 'auth_required' ? (
                 <KeyRound className="h-3.5 w-3.5" style={{ color: 'var(--energy-medium-text)' }} />
               ) : (
                 <AlertCircle className="h-3.5 w-3.5" style={{ color: 'var(--energy-low-text)' }} />
               )}
-              {usage.status === 'auth_required' ? '클릭하여 로그인 창 열기' : '클릭하여 세션 확인'}
+              {isPhase3Pending
+                ? '설정에서 표시 관리'
+                : usage.status === 'auth_required'
+                  ? '클릭하여 로그인 창 열기'
+                  : '클릭하여 세션 확인'}
             </span>
             <ArrowUpRight className="h-3.5 w-3.5" style={{ color: 'var(--text-secondary)' }} />
           </div>
@@ -212,7 +236,7 @@ export function ProviderCard({ usage, now, onOpenLogin }: ProviderCardProps) {
       <button
         id={`card-provider-${usage.id}`}
         type="button"
-        onClick={() => onOpenLogin(usage.id)}
+        onClick={() => (isPhase3Pending ? onOpenSettings() : onOpenLogin(usage.id))}
         className="surface-card surface-card-interactive block w-full p-3 text-left"
       >
         {cardInner}

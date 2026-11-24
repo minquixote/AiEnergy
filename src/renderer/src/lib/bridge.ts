@@ -149,6 +149,7 @@ function buildBrowserFallbackUsages(
 function createBrowserFallbackBridge(): AiEnergyApi {
   let settings: AppSettings = {
     ...DEFAULT_SETTINGS,
+    dataSourceMode: 'mock',
     enabledProviders: { ...DEFAULT_SETTINGS.enabledProviders }
   }
   let lastUpdatedAt = Date.now()

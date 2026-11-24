@@ -94,8 +94,10 @@ export function App() {
               <ProviderCard
                 key={id}
                 usage={snapshot.usages[id]}
+                dataSourceMode={snapshot.settings.dataSourceMode}
                 now={now}
                 onOpenLogin={(providerId) => void openProviderLogin(providerId)}
+                onOpenSettings={() => setView('settings')}
               />
             ))
           ) : (

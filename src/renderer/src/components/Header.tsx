@@ -66,15 +66,17 @@ export function Header({
             <h1 className="truncate text-[13px] font-semibold tracking-[-0.015em] leading-tight">
               {view === 'settings' ? '설정 및 로그인 관리' : APP_NAME}
             </h1>
-            {view === 'main' && dataSourceMode === 'mock' && (
+            {view === 'main' && (
               <span
                 className="rounded px-1.5 py-[1px] text-[9px] font-semibold tracking-wider uppercase"
                 style={{
-                  backgroundColor: 'var(--surface-subtle)',
-                  color: 'var(--text-secondary)'
+                  backgroundColor:
+                    dataSourceMode === 'live' ? 'var(--energy-high-soft)' : 'var(--surface-subtle)',
+                  color:
+                    dataSourceMode === 'live' ? 'var(--energy-high-text)' : 'var(--text-secondary)'
                 }}
               >
-                MOCK
+                {dataSourceMode === 'live' ? 'LIVE' : 'MOCK'}
               </span>
             )}
           </div>
