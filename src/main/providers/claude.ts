@@ -157,6 +157,32 @@ async function collectWithImportedCookie(
     const usagePayload = (await usageRes.json().catch(() => null)) as unknown
     const parsed = parseClaudeUsageJson(usagePayload)
     if (!parsed) {
+      const isEmptyQuotaObject =
+        typeof usagePayload === 'object' &&
+        usagePayload !== null &&
+        !Array.isArray(usagePayload) &&
+        ('five_hour' in usagePayload || 'seven_day' in usagePayload)
+
+      if (isEmptyQuotaObject || orgInfo.planName === 'Free') {
+        return {
+          usage: {
+            id: 'claude',
+            status: 'ok',
+            sessionRemainingPct: null,
+            sessionResetAt: null,
+            weeklyRemainingPct: null,
+            weeklyResetAt: null,
+            planName: orgInfo.planName ?? 'Free',
+            updatedAt: Date.now(),
+            errorMessage:
+              'Claude 무료(Free) 플랜은 Anthropic에서 실시간 % 사용량 게이지를 제공하지 않습니다.'
+          },
+          strategy: 'session_fetch',
+          httpStatus: usageRes.status,
+          diagnostic: 'Claude Free 계정 확인 (사용량 % 미제공)'
+        }
+      }
+
       return makeErrorResult('Claude 사용량 응답을 해석하지 못했습니다.', {
         httpStatus: usageRes.status
       })

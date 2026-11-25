@@ -110,7 +110,7 @@ export class EnergyCoordinator {
     })
 
     this.restartAutoRefreshTimer()
-    void this.syncAuthSources()
+    void this.syncAuthSources().then(() => this.emit())
 
     if (this.settings.dataSourceMode === 'live') {
       void this.refreshInternal(false)
@@ -135,7 +135,10 @@ export class EnergyCoordinator {
     return {
       usages: this.usages,
       settings: this.settings,
-      traySummary: computeTraySummary(this.usages, this.settings.enabledProviders),
+      traySummary: computeTraySummary(this.usages, this.settings.enabledProviders, {
+        authSources: this.authSources,
+        dataSourceMode: this.settings.dataSourceMode
+      }),
       lastUpdatedAt: this.lastUpdatedAt,
       cooldownUntil: this.cooldownUntil,
       platform,

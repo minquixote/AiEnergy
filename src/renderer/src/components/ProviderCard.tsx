@@ -1,6 +1,12 @@
 import { AlertCircle, ArrowUpRight, Clock, KeyRound } from 'lucide-react'
 import { LIVE_SUPPORTED_PROVIDERS, PROVIDER_META } from '@shared/constants'
-import type { DataSourceMode, EnergyLevel, ProviderId, ProviderUsage } from '@shared/types'
+import type {
+  DataSourceMode,
+  EnergyLevel,
+  ProviderAuthSource,
+  ProviderId,
+  ProviderUsage
+} from '@shared/types'
 import {
   clampPercentage,
   formatCountdown,
@@ -13,6 +19,7 @@ import { ProviderIcon } from './ProviderIcon'
 
 interface ProviderCardProps {
   usage: ProviderUsage
+  authSource?: ProviderAuthSource
   dataSourceMode: DataSourceMode
   now: number
   onOpenLogin: (providerId: ProviderId) => void
@@ -35,6 +42,7 @@ const LEVEL_SOFT_BG: Record<EnergyLevel, string> = {
 
 export function ProviderCard({
   usage,
+  authSource = 'none',
   dataSourceMode,
   now,
   onOpenLogin,
@@ -43,6 +51,9 @@ export function ProviderCard({
   const meta = PROVIDER_META[usage.id]
   const isPhase3Pending =
     dataSourceMode === 'live' && !LIVE_SUPPORTED_PROVIDERS.includes(usage.id)
+  const isUnconnected =
+    dataSourceMode === 'live' && usage.status === 'auth_required' && authSource === 'none'
+  const isQuotaUnavailable = usage.status === 'ok' && usage.sessionRemainingPct === null
   const isActionable = usage.status !== 'ok'
 
   const sessionPct =
@@ -70,12 +81,28 @@ export function ProviderCard({
         bgColor: 'var(--energy-unknown-soft)'
       }
     }
+    if (isQuotaUnavailable) {
+      return {
+        label: 'N/A',
+        dotColor: 'var(--energy-unknown)',
+        textColor: 'var(--energy-unknown-text)',
+        bgColor: 'var(--energy-unknown-soft)'
+      }
+    }
     if (usage.status === 'ok') {
       return {
         label: '연동됨',
         dotColor: 'var(--energy-high)',
         textColor: 'var(--energy-high-text)',
         bgColor: 'var(--energy-high-soft)'
+      }
+    }
+    if (isUnconnected) {
+      return {
+        label: '미연결',
+        dotColor: 'var(--energy-unknown)',
+        textColor: 'var(--energy-unknown-text)',
+        bgColor: 'var(--energy-unknown-soft)'
       }
     }
     if (usage.status === 'auth_required') {
@@ -200,6 +227,26 @@ export function ProviderCard({
             </div>
           )}
         </div>
+      ) : isQuotaUnavailable ? (
+        <div className="mt-2.5 flex flex-col gap-1.5">
+          <div className="flex items-baseline gap-1.5">
+            <span
+              className="text-[17px] font-bold tracking-[-0.02em] leading-none"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              N/A
+            </span>
+            <span className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>
+              사용량 게이지 미제공
+            </span>
+          </div>
+          <p
+            className="text-[11px] leading-relaxed text-left"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            {usage.errorMessage ?? '현재 플랜에서는 실시간 % 사용량 정보를 제공하지 않습니다.'}
+          </p>
+        </div>
       ) : (
         <div className="mt-2.5 flex flex-col gap-2">
           <p
@@ -221,6 +268,8 @@ export function ProviderCard({
             <span className="flex items-center gap-1.5">
               {isPhase3Pending ? (
                 <Clock className="h-3.5 w-3.5" style={{ color: 'var(--text-secondary)' }} />
+              ) : isUnconnected ? (
+                <KeyRound className="h-3.5 w-3.5" style={{ color: 'var(--text-secondary)' }} />
               ) : usage.status === 'auth_required' ? (
                 <KeyRound className="h-3.5 w-3.5" style={{ color: 'var(--energy-medium-text)' }} />
               ) : (

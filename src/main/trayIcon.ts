@@ -293,6 +293,23 @@ function sdGlyphStroke(
       return Math.min(stem, dot)
     }
 
+    case 'N': {
+      const left = sdSegment(x, y, w * 0.14, h * 0.08, w * 0.14, h * 0.92)
+      const diag = sdSegment(x, y, w * 0.14, h * 0.08, w * 0.86, h * 0.92)
+      const right = sdSegment(x, y, w * 0.86, h * 0.08, w * 0.86, h * 0.92)
+      return Math.min(left, diag, right)
+    }
+
+    case '/':
+      return sdSegment(x, y, w * 0.80, h * 0.08, w * 0.20, h * 0.92)
+
+    case 'A': {
+      const left = sdSegment(x, y, w * 0.50, h * 0.08, w * 0.12, h * 0.92)
+      const right = sdSegment(x, y, w * 0.50, h * 0.08, w * 0.88, h * 0.92)
+      const bar = sdSegment(x, y, w * 0.24, h * 0.66, w * 0.76, h * 0.66)
+      return Math.min(left, right, bar)
+    }
+
     default:
       return Infinity
   }
@@ -302,6 +319,8 @@ function getGlyphWidth(ch: string, digitW: number): number {
   if (ch === '1') return digitW * 0.72
   if (ch === '%') return digitW * 1.18
   if (ch === '!') return digitW * 0.55
+  if (ch === '/') return digitW * 0.72
+  if (ch === 'N' || ch === 'A') return digitW * 1.05
   if (ch === '-') return digitW * 0.85
   return digitW
 }
@@ -594,13 +613,16 @@ export function renderMultiProviderTrayPng(
 
     const fillColor = (showPercentage ? FILL_COLORS_WITH_TEXT : FILL_COLORS_PLAIN)[item.level]
 
-    const label =
-      pct !== null ? `${pct}%` : item.status === 'auth_required' || item.status === 'error' ? '!' : '--'
+    const isUnavailable =
+      item.badgeKind === 'unavailable' ||
+      (item.badgeKind === undefined && item.status === 'ok' && pct === null)
 
-    const isFourChar = label.length >= 4
-    const glyphH = isFourChar ? 7.3 : 7.8
-    const digitW = isFourChar ? 4.35 : 4.75
-    const tracking = isFourChar ? 0.95 : 1.15
+    const label = pct !== null ? `${pct}%` : isUnavailable ? 'N/A' : '!'
+
+    const isFourChar = label.length >= 4 || label === 'N/A'
+    const glyphH = label === 'N/A' ? 6.8 : isFourChar ? 7.3 : 7.8
+    const digitW = label === 'N/A' ? 4.2 : isFourChar ? 4.35 : 4.75
+    const tracking = label === 'N/A' ? 0.85 : isFourChar ? 0.95 : 1.15
     const glyphTop = cy - glyphH / 2
     const glyphs = showPercentage
       ? layoutCenteredText(label, batteryCx, digitW, tracking)
@@ -726,6 +748,9 @@ export function formatTrayTooltip(appName: string, items: TrayItemSummary[], nam
     const name = names[item.id]
     if (item.status === 'ok' && item.remainingPct !== null) {
       return `${name} ${item.remainingPct}%`
+    }
+    if (item.badgeKind === 'unavailable' || (item.status === 'ok' && item.remainingPct === null)) {
+      return `${name} N/A`
     }
     if (item.status === 'auth_required') {
       return `${name} 재로그인 필요`

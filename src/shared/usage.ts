@@ -1,8 +1,11 @@
 import { ENERGY_THRESHOLDS, PROVIDER_ORDER } from './constants'
 import type {
+  DataSourceMode,
   EnergyLevel,
+  ProviderAuthSource,
   ProviderId,
   ProviderUsage,
+  TrayBadgeKind,
   TrayItemSummary,
   TraySummary
 } from './types'
@@ -39,9 +42,15 @@ export function getEnergyLevelLabel(level: EnergyLevel): string {
   }
 }
 
+export interface TraySummaryContext {
+  authSources?: Partial<Record<ProviderId, ProviderAuthSource>>
+  dataSourceMode?: DataSourceMode
+}
+
 export function computeTraySummary(
   usages: Record<ProviderId, ProviderUsage>,
-  enabledProviders: Record<ProviderId, boolean>
+  enabledProviders: Record<ProviderId, boolean>,
+  context?: TraySummaryContext
 ): TraySummary {
   const items: TrayItemSummary[] = []
   let lowestRemainingPct: number | null = null
@@ -54,17 +63,38 @@ export function computeTraySummary(
     enabledCount += 1
 
     const usage = usages[id]
-    const isOk = Boolean(usage && usage.status === 'ok' && usage.sessionRemainingPct !== null)
-    const pct = isOk && usage.sessionRemainingPct !== null ? clampPercentage(usage.sessionRemainingPct) : null
+    const isOkWithPct = Boolean(usage && usage.status === 'ok' && usage.sessionRemainingPct !== null)
+    const pct =
+      isOkWithPct && usage.sessionRemainingPct !== null
+        ? clampPercentage(usage.sessionRemainingPct)
+        : null
+
+    let badgeKind: TrayBadgeKind
+    if (isOkWithPct && pct !== null) {
+      badgeKind = 'percentage'
+    } else if (usage?.status === 'ok' && usage.sessionRemainingPct === null) {
+      // Connected account whose plan (e.g. Claude Free) does not expose numeric % usage windows
+      badgeKind = 'unavailable'
+    } else if (
+      usage?.status === 'auth_required' &&
+      context?.dataSourceMode === 'live' &&
+      context?.authSources?.[id] === 'none'
+    ) {
+      // Unsubscribed or not-yet-connected platform should show calm N/A instead of urgent !
+      badgeKind = 'unavailable'
+    } else {
+      badgeKind = 'alert'
+    }
 
     items.push({
       id,
       status: usage?.status ?? 'error',
       remainingPct: pct,
-      level: getEnergyLevel(pct)
+      level: getEnergyLevel(pct),
+      badgeKind
     })
 
-    if (!isOk || pct === null) continue
+    if (!isOkWithPct || pct === null) continue
 
     connectedCount += 1
     if (lowestRemainingPct === null || pct < lowestRemainingPct) {

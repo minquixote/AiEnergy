@@ -44,11 +44,14 @@ export interface AppSettings {
   enabledProviders: Record<ProviderId, boolean>
 }
 
+export type TrayBadgeKind = 'percentage' | 'unavailable' | 'alert'
+
 export interface TrayItemSummary {
   id: ProviderId
   status: ProviderStatus
   remainingPct: number | null
   level: EnergyLevel
+  badgeKind?: TrayBadgeKind
 }
 
 export interface TraySummary {

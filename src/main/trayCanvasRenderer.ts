@@ -39,17 +39,17 @@ const RENDERER_HTML = `<!doctype html>
     '-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", "Helvetica Neue", Arial, sans-serif';
 
   const FILL_STOPS_WITH_TEXT = {
-    high: ['#1a9c4b', '#147a39'],
-    medium: ['#d97706', '#b45309'],
-    low: ['#dc2626', '#b91c1c'],
-    unknown: ['#64748b', '#475569']
+    high: ['rgba(34, 197, 94, 0.64)', 'rgba(21, 160, 72, 0.54)'],
+    medium: ['rgba(245, 158, 11, 0.68)', 'rgba(217, 119, 6, 0.58)'],
+    low: ['rgba(239, 68, 68, 0.74)', 'rgba(220, 38, 38, 0.64)'],
+    unknown: ['rgba(148, 163, 184, 0.45)', 'rgba(100, 116, 139, 0.38)']
   };
 
   const FILL_STOPS_PLAIN = {
-    high: ['#22c55e', '#16a34a'],
-    medium: ['#f59e0b', '#d97706'],
-    low: ['#ef4444', '#dc2626'],
-    unknown: ['#94a3b8', '#64748b']
+    high: ['rgba(34, 197, 94, 0.82)', 'rgba(22, 163, 74, 0.74)'],
+    medium: ['rgba(245, 158, 11, 0.84)', 'rgba(217, 119, 6, 0.76)'],
+    low: ['rgba(239, 68, 68, 0.88)', 'rgba(220, 38, 38, 0.80)'],
+    unknown: ['rgba(148, 163, 184, 0.65)', 'rgba(100, 116, 139, 0.55)']
   };
 
   function getCachedPaths() {
@@ -94,17 +94,30 @@ const RENDERER_HTML = `<!doctype html>
     ctx.scale(scale, scale);
     ctx.clearRect(0, 0, logicalWidth, logicalHeight);
 
-    const iconColor = isDarkTheme ? 'rgba(255, 255, 255, 0.96)' : 'rgba(20, 22, 26, 0.92)';
-    const outlineColor = isDarkTheme ? 'rgba(255, 255, 255, 0.88)' : 'rgba(24, 26, 31, 0.86)';
-    const capColor = isDarkTheme ? 'rgba(255, 255, 255, 0.85)' : 'rgba(24, 26, 31, 0.82)';
+    const iconColorActive = isDarkTheme ? 'rgba(255, 255, 255, 0.96)' : 'rgba(20, 22, 26, 0.92)';
+    const iconColorMuted = isDarkTheme ? 'rgba(255, 255, 255, 0.78)' : 'rgba(20, 22, 26, 0.68)';
 
-    const trackBg = showPercentage
+    const outlineColorActive = isDarkTheme ? 'rgba(255, 255, 255, 0.86)' : 'rgba(24, 26, 31, 0.84)';
+    const outlineColorMuted = isDarkTheme ? 'rgba(255, 255, 255, 0.66)' : 'rgba(24, 26, 31, 0.62)';
+
+    const capColorActive = isDarkTheme ? 'rgba(255, 255, 255, 0.82)' : 'rgba(24, 26, 31, 0.80)';
+    const capColorMuted = isDarkTheme ? 'rgba(255, 255, 255, 0.62)' : 'rgba(24, 26, 31, 0.58)';
+
+    const trackBgActive = showPercentage
       ? isDarkTheme
-        ? 'rgba(13, 17, 24, 0.86)'
-        : 'rgba(22, 27, 36, 0.84)'
+        ? 'rgba(12, 16, 24, 0.56)'
+        : 'rgba(18, 23, 32, 0.62)'
       : isDarkTheme
-        ? 'rgba(15, 19, 27, 0.42)'
+        ? 'rgba(15, 19, 27, 0.34)'
         : 'rgba(24, 26, 31, 0.14)';
+
+    const trackBgMuted = showPercentage
+      ? isDarkTheme
+        ? 'rgba(12, 16, 24, 0.42)'
+        : 'rgba(22, 27, 36, 0.48)'
+      : isDarkTheme
+        ? 'rgba(15, 19, 27, 0.24)'
+        : 'rgba(24, 26, 31, 0.10)';
 
     const paths = getCachedPaths();
     const fillMap = showPercentage ? FILL_STOPS_WITH_TEXT : FILL_STOPS_PLAIN;
@@ -112,6 +125,15 @@ const RENDERER_HTML = `<!doctype html>
     items.forEach((item, idx) => {
       const startX = paddingX + idx * (itemW + itemGap);
       const iconCx = startX + iconSlotW / 2;
+
+      const pct =
+        item.status === 'ok' && typeof item.remainingPct === 'number' && Number.isFinite(item.remainingPct)
+          ? Math.max(0, Math.min(100, Math.round(item.remainingPct)))
+          : null;
+
+      const isUnavailable =
+        item.badgeKind === 'unavailable' ||
+        (item.badgeKind === undefined && item.status === 'ok' && pct === null);
 
       // 1. Official brand vector icon
       const drawSize = ICON_OPTICAL_SIZE[item.id] ?? 14.5;
@@ -122,12 +144,12 @@ const RENDERER_HTML = `<!doctype html>
         ctx.translate(iconCx - drawSize / 2, cy - drawSize / 2);
         ctx.scale(iconScale, iconScale);
         if (isDarkTheme) {
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.28)';
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.26)';
           ctx.shadowBlur = 1.2 * scale;
           ctx.shadowOffsetX = 0;
           ctx.shadowOffsetY = 0.5 * scale;
         }
-        ctx.fillStyle = iconColor;
+        ctx.fillStyle = isUnavailable ? iconColorMuted : iconColorActive;
         ctx.fill(path2d);
         ctx.restore();
       }
@@ -143,16 +165,11 @@ const RENDERER_HTML = `<!doctype html>
       const innerH = batteryH - innerInset * 2;
       const innerR = Math.max(1.2, bodyR - innerInset);
 
-      const pct =
-        item.status === 'ok' && typeof item.remainingPct === 'number' && Number.isFinite(item.remainingPct)
-          ? Math.max(0, Math.min(100, Math.round(item.remainingPct)))
-          : null;
-
-      // 2a. Inner dark capsule track + clipped level fill
+      // 2a. Frosted translucent dark capsule track + semi-transparent colored level fill
       ctx.save();
       ctx.beginPath();
       ctx.roundRect(innerX, innerY, innerW, innerH, innerR);
-      ctx.fillStyle = trackBg;
+      ctx.fillStyle = isUnavailable ? trackBgMuted : trackBgActive;
       ctx.fill();
 
       if (pct !== null && pct > 0) {
@@ -178,7 +195,7 @@ const RENDERER_HTML = `<!doctype html>
         Math.max(1.5, bodyR - borderW / 2)
       );
       ctx.lineWidth = borderW;
-      ctx.strokeStyle = outlineColor;
+      ctx.strokeStyle = isUnavailable ? outlineColorMuted : outlineColorActive;
       ctx.stroke();
       ctx.restore();
 
@@ -188,28 +205,28 @@ const RENDERER_HTML = `<!doctype html>
       ctx.save();
       ctx.beginPath();
       ctx.roundRect(capX, capY, capW, capH, [0.45, 1.1, 1.1, 0.45]);
-      ctx.fillStyle = capColor;
+      ctx.fillStyle = isUnavailable ? capColorMuted : capColorActive;
       ctx.fill();
       ctx.restore();
 
-      // 2d. High-legibility native system percentage label centered optically inside the capsule
+      // 2d. High-legibility native system percentage / status label centered optically inside the capsule
       if (showPercentage) {
         const label =
           pct !== null
             ? String(pct) + '%'
-            : item.status === 'auth_required' || item.status === 'error'
-              ? '!'
-              : '--';
+            : isUnavailable
+              ? 'N/A'
+              : '!';
 
         const batteryCx = batteryLeft + batteryW / 2;
         const maxTextW = innerW - 4.4;
-        let fontSize = label.length >= 4 ? 10.25 : 11.0;
+        let fontSize = label === 'N/A' ? 9.75 : label.length >= 4 ? 10.25 : 11.0;
 
         ctx.save();
         ctx.textAlign = 'center';
         ctx.textBaseline = 'alphabetic';
 
-        while (fontSize > 8.5) {
+        while (fontSize > 8.25) {
           ctx.font = '700 ' + fontSize + 'px ' + FONT_FAMILY;
           if (ctx.measureText(label).width <= maxTextW) break;
           fontSize -= 0.25;
@@ -221,11 +238,11 @@ const RENDERER_HTML = `<!doctype html>
         const textY = cy + (ascent - descent) / 2;
 
         // Subtle crisp drop shadow keeps inner glyph counters (0, 8, %) completely open and sharp
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.58)';
-        ctx.shadowBlur = 1.4 * scale;
+        ctx.shadowColor = isUnavailable ? 'rgba(0, 0, 0, 0.42)' : 'rgba(0, 0, 0, 0.56)';
+        ctx.shadowBlur = 1.3 * scale;
         ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 0.5 * scale;
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = isUnavailable ? 'rgba(255, 255, 255, 0.84)' : '#ffffff';
         ctx.fillText(label, batteryCx, textY);
         ctx.restore();
       }

@@ -98,6 +98,64 @@ describe('tray summary computation', () => {
       ['claude', 'error']
     ])
   })
+
+  it('marks unconnected live providers and quota-less free plans as unavailable (N/A) while keeping expired sessions as alert (!)', () => {
+    const base = buildMockUsages('auth_issue', 1_700_000_000_000)
+    const usages = {
+      ...base,
+      claude: {
+        ...base.claude,
+        status: 'auth_required' as const
+      }
+    }
+
+    const liveSummary = computeTraySummary(
+      usages,
+      { chatgpt: true, gemini: true, claude: true },
+      {
+        dataSourceMode: 'live',
+        authSources: {
+          chatgpt: 'imported_session',
+          gemini: 'imported_cookie', // previously connected -> expired should alert (!)
+          claude: 'none' // unsubscribed/never linked -> calm N/A
+        }
+      }
+    )
+
+    expect(liveSummary.items.map((item) => [item.id, item.badgeKind])).toEqual([
+      ['chatgpt', 'percentage'],
+      ['gemini', 'alert'],
+      ['claude', 'unavailable']
+    ])
+
+    // Connected Claude Free account (status ok, sessionRemainingPct null) -> unavailable (N/A)
+    const freeSummary = computeTraySummary(
+      {
+        ...usages,
+        claude: {
+          id: 'claude',
+          status: 'ok',
+          sessionRemainingPct: null,
+          sessionResetAt: null,
+          weeklyRemainingPct: null,
+          weeklyResetAt: null,
+          planName: 'Free',
+          updatedAt: 1_700_000_000_000
+        }
+      },
+      { chatgpt: true, gemini: true, claude: true },
+      {
+        dataSourceMode: 'live',
+        authSources: {
+          chatgpt: 'imported_session',
+          gemini: 'imported_cookie',
+          claude: 'imported_cookie'
+        }
+      }
+    )
+
+    expect(freeSummary.items.find((i) => i.id === 'claude')?.badgeKind).toBe('unavailable')
+  })
 })
 
 describe('time, countdown, and cooldown formatters', () => {
