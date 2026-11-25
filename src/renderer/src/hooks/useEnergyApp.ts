@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { PROVIDER_META } from '@shared/constants'
 import type {
   AppSettings,
   AppSnapshot,
@@ -16,8 +17,8 @@ export interface UseEnergyAppState {
   updateSettings: (patch: Partial<AppSettings>) => Promise<void>
   setMockScenario: (scenario: MockScenarioId) => Promise<void>
   openProviderLogin: (providerId: ProviderId) => Promise<void>
-  importChatGptSession: (rawJson: string) => Promise<ImportSessionResult>
-  openChatGptSessionPage: () => Promise<void>
+  importProviderSession: (providerId: ProviderId, rawInput: string) => Promise<ImportSessionResult>
+  openExternalProviderPage: (providerId: ProviderId) => Promise<void>
   disconnectProvider: (providerId: ProviderId) => Promise<void>
   quitApp: () => Promise<void>
 }
@@ -96,28 +97,37 @@ export function useEnergyApp(): UseEnergyAppState {
     [showToast]
   )
 
-  const importChatGptSession = useCallback(
-    async (rawJson: string): Promise<ImportSessionResult> => {
-      const result = await getEnergyBridge().importChatGptSession(rawJson)
+  const importProviderSession = useCallback(
+    async (providerId: ProviderId, rawInput: string): Promise<ImportSessionResult> => {
+      const result = await getEnergyBridge().importProviderSession(providerId, rawInput)
       setSnapshot(result.snapshot)
       if (result.ok) {
-        showToast('ChatGPT 세션이 연결되었습니다.')
+        showToast(`${PROVIDER_META[providerId].name} 연결이 완료되었습니다.`)
       }
       return result
     },
     [showToast]
   )
 
-  const openChatGptSessionPage = useCallback(async () => {
-    await getEnergyBridge().openChatGptSessionPage()
-    showToast('기본 브라우저에서 세션 페이지를 열었습니다. 전체 복사 후 붙여넣어 주세요.')
-  }, [showToast])
+  const openExternalProviderPage = useCallback(
+    async (providerId: ProviderId) => {
+      await getEnergyBridge().openExternalProviderPage(providerId)
+      const hint =
+        providerId === 'chatgpt'
+          ? '열린 세션 페이지 전체를 복사해 붙여넣어 주세요.'
+          : providerId === 'gemini'
+            ? '개발자 도구(⌥⌘I) Network에서 executeQuery → Copy as cURL을 복사해 붙여넣어 주세요.'
+            : '개발자 도구에서 sessionKey 또는 Copy as cURL을 복사해 붙여넣어 주세요.'
+      showToast(hint)
+    },
+    [showToast]
+  )
 
   const disconnectProvider = useCallback(
     async (providerId: ProviderId) => {
       const next = await getEnergyBridge().disconnectProvider(providerId)
       setSnapshot(next)
-      showToast('로컬 세션을 초기화했습니다.')
+      showToast(`${PROVIDER_META[providerId].name} 로컬 세션을 초기화했습니다.`)
     },
     [showToast]
   )
@@ -134,8 +144,8 @@ export function useEnergyApp(): UseEnergyAppState {
     updateSettings,
     setMockScenario,
     openProviderLogin,
-    importChatGptSession,
-    openChatGptSessionPage,
+    importProviderSession,
+    openExternalProviderPage,
     disconnectProvider,
     quitApp
   }

@@ -220,8 +220,8 @@ export function ProviderCard({
               )}
               {isPhase3Pending
                 ? '설정에서 표시 관리'
-                : dataSourceMode === 'live' && usage.id === 'chatgpt'
-                  ? '클릭하여 ChatGPT 연결하기'
+                : dataSourceMode === 'live'
+                  ? `클릭하여 ${meta.name} 연결하기`
                   : usage.status === 'auth_required'
                     ? '클릭하여 로그인 창 열기'
                     : '클릭하여 세션 확인'}

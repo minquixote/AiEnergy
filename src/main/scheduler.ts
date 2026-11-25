@@ -4,16 +4,22 @@ import { computeTraySummary, getCooldownRemainingMs } from '../shared/usage'
 import type {
   AppSettings,
   AppSnapshot,
-  ChatGptAuthSource,
   ImportSessionResult,
   LoginWindowResult,
   MockScenarioId,
+  ProviderAlertState,
+  ProviderAuthSource,
   ProviderId,
   ProviderUsage,
   RefreshResult
 } from '../shared/types'
+import { createInitialAlertStateMap, UsageNotifier } from './notifier'
 import { resolveChatGptAuthSource } from './providers/chatgpt'
 import { parseImportedChatGptSession } from './providers/chatgptAuth'
+import { resolveClaudeAuthSource } from './providers/claude'
+import { parseImportedClaudeCookie } from './providers/claudeAuth'
+import { resolveGeminiAuthSource } from './providers/gemini'
+import { parseImportedGeminiCookie } from './providers/geminiAuth'
 import { clearProviderSession, openProviderLoginWindow } from './providers/loginWindow'
 import { buildMockUsages, nudgeMockUsages } from './providers/mock'
 import { createProviderRegistry, type ProviderRegistry } from './providers/registry'
@@ -29,34 +35,18 @@ interface BackoffState {
   until: number
 }
 
-function buildInitialLiveUsages(
-  registry: ProviderRegistry,
-  now: number = Date.now()
-): Record<ProviderId, ProviderUsage> {
+function buildInitialLiveUsages(now: number = Date.now()): Record<ProviderId, ProviderUsage> {
   const result = {} as Record<ProviderId, ProviderUsage>
   for (const id of PROVIDER_ORDER) {
-    if (registry.isSupported(id)) {
-      result[id] = {
-        id,
-        status: 'auth_required',
-        sessionRemainingPct: null,
-        sessionResetAt: null,
-        weeklyRemainingPct: null,
-        weeklyResetAt: null,
-        updatedAt: now,
-        errorMessage: `${PROVIDER_META[id].name} 연결 상태를 확인하는 중입니다.`
-      }
-    } else {
-      result[id] = {
-        id,
-        status: 'error',
-        sessionRemainingPct: null,
-        sessionResetAt: null,
-        weeklyRemainingPct: null,
-        weeklyResetAt: null,
-        updatedAt: now,
-        errorMessage: `${PROVIDER_META[id].name} 실연동은 Phase 3에서 추가 예정입니다. (설정에서 숨김 또는 Mock 모드 확인 가능)`
-      }
+    result[id] = {
+      id,
+      status: 'auth_required',
+      sessionRemainingPct: null,
+      sessionResetAt: null,
+      weeklyRemainingPct: null,
+      weeklyResetAt: null,
+      updatedAt: now,
+      errorMessage: `${PROVIDER_META[id].name} 연결 상태를 확인하는 중입니다.`
     }
   }
   return result
@@ -65,25 +55,33 @@ function buildInitialLiveUsages(
 export class EnergyCoordinator {
   private readonly store: AppStore
   private readonly registry: ProviderRegistry
+  private readonly notifier: UsageNotifier
   private readonly listeners = new Set<SnapshotListener>()
   private readonly rateLimitBackoff = new Map<ProviderId, BackoffState>()
 
   private usages: Record<ProviderId, ProviderUsage>
   private settings: AppSettings
+  private alertStates: Record<ProviderId, ProviderAlertState>
   private lastUpdatedAt: number | null
   private cooldownUntil = 0
   private activeRefreshCount = 0
-  private chatGptAuthSource: ChatGptAuthSource = 'none'
+  private authSources: Record<ProviderId, ProviderAuthSource> = {
+    chatgpt: 'none',
+    gemini: 'none',
+    claude: 'none'
+  }
   private refreshTimer: NodeJS.Timeout | null = null
 
   private get isRefreshing(): boolean {
     return this.activeRefreshCount > 0
   }
 
-  constructor(store: AppStore) {
+  constructor(store: AppStore, options?: { onNotificationClick?: () => void }) {
     this.store = store
     this.registry = createProviderRegistry(store)
+    this.notifier = new UsageNotifier(options?.onNotificationClick)
     this.settings = store.getSettings()
+    this.alertStates = store.getAlertStates()
 
     const cached = store.getCachedUsages()
     const cachedAt = store.getLastUpdatedAt()
@@ -96,7 +94,7 @@ export class EnergyCoordinator {
       this.lastUpdatedAt = now
       this.store.setCachedUsages(this.usages, now)
     } else {
-      this.usages = buildInitialLiveUsages(this.registry, Date.now())
+      this.usages = buildInitialLiveUsages(Date.now())
       this.lastUpdatedAt = null
     }
 
@@ -112,7 +110,7 @@ export class EnergyCoordinator {
     })
 
     this.restartAutoRefreshTimer()
-    void this.syncAuthSource()
+    void this.syncAuthSources()
 
     if (this.settings.dataSourceMode === 'live') {
       void this.refreshInternal(false)
@@ -143,7 +141,7 @@ export class EnergyCoordinator {
       platform,
       systemTheme: nativeTheme.shouldUseDarkColors ? 'dark' : 'light',
       isRefreshing: this.isRefreshing,
-      chatGptAuthSource: this.chatGptAuthSource
+      authSources: { ...this.authSources }
     }
   }
 
@@ -182,13 +180,16 @@ export class EnergyCoordinator {
 
     if (patch.dataSourceMode && patch.dataSourceMode !== prevMode) {
       this.rateLimitBackoff.clear()
+      this.alertStates = createInitialAlertStateMap()
+      this.store.resetAlertStates()
+
       if (this.settings.dataSourceMode === 'mock') {
         const now = Date.now()
         this.usages = buildMockUsages(this.settings.mockScenario, now)
         this.lastUpdatedAt = now
         this.store.setCachedUsages(this.usages, now)
       } else {
-        this.usages = buildInitialLiveUsages(this.registry, Date.now())
+        this.usages = buildInitialLiveUsages(Date.now())
         this.lastUpdatedAt = null
         this.store.clearCachedUsages()
         void this.refreshInternal(false)
@@ -202,6 +203,7 @@ export class EnergyCoordinator {
       this.usages = buildMockUsages(this.settings.mockScenario, now)
       this.lastUpdatedAt = now
       this.store.setCachedUsages(this.usages, now)
+      this.processNotifications()
     }
 
     if (this.settings.dataSourceMode === 'live' && patch.enabledProviders) {
@@ -217,39 +219,70 @@ export class EnergyCoordinator {
   }
 
   setMockScenario(scenario: MockScenarioId): AppSnapshot {
+    const modeChanged = this.settings.dataSourceMode !== 'mock'
     this.settings = this.store.updateSettings({
       dataSourceMode: 'mock',
       mockScenario: scenario
     })
+    if (modeChanged) {
+      this.alertStates = createInitialAlertStateMap()
+      this.store.resetAlertStates()
+    }
     const now = Date.now()
     this.usages = buildMockUsages(scenario, now)
     this.lastUpdatedAt = now
     this.store.setCachedUsages(this.usages, now)
+    this.processNotifications()
     this.emit()
     return this.getSnapshot()
   }
 
-  async importChatGptSession(rawJson: string): Promise<ImportSessionResult> {
-    const parsed = parseImportedChatGptSession(rawJson)
-    if (!parsed.ok || !parsed.credential) {
-      return {
-        ok: false,
-        error: parsed.error ?? '세션 JSON을 해석할 수 없습니다.',
-        snapshot: this.getSnapshot()
+  async importProviderSession(
+    providerId: ProviderId,
+    rawInput: string
+  ): Promise<ImportSessionResult> {
+    if (providerId === 'chatgpt') {
+      const parsed = parseImportedChatGptSession(rawInput)
+      if (!parsed.ok || !parsed.credential) {
+        return {
+          ok: false,
+          error: parsed.error ?? 'ChatGPT 세션 JSON을 해석할 수 없습니다.',
+          snapshot: this.getSnapshot()
+        }
       }
+      this.store.saveImportedChatGptSession(parsed.credential)
+    } else if (providerId === 'gemini') {
+      const parsed = parseImportedGeminiCookie(rawInput)
+      if (!parsed.ok || !parsed.credential) {
+        return {
+          ok: false,
+          error: parsed.error ?? 'Gemini 쿠키를 해석할 수 없습니다.',
+          snapshot: this.getSnapshot()
+        }
+      }
+      this.store.saveImportedGeminiCookie(parsed.credential)
+    } else {
+      const parsed = parseImportedClaudeCookie(rawInput)
+      if (!parsed.ok || !parsed.credential) {
+        return {
+          ok: false,
+          error: parsed.error ?? 'Claude 세션을 해석할 수 없습니다.',
+          snapshot: this.getSnapshot()
+        }
+      }
+      this.store.saveImportedClaudeCookie(parsed.credential)
     }
 
-    this.store.saveImportedChatGptSession(parsed.credential)
-    this.rateLimitBackoff.delete('chatgpt')
-    await this.syncAuthSource()
+    this.rateLimitBackoff.delete(providerId)
+    await this.syncAuthSources()
 
     if (this.settings.dataSourceMode !== 'live') {
       this.settings = this.store.updateSettings({ dataSourceMode: 'live' })
     }
 
-    await this.refreshSingleProvider('chatgpt')
+    await this.refreshSingleProvider(providerId)
     const snapshot = this.getSnapshot()
-    const usage = snapshot.usages.chatgpt
+    const usage = snapshot.usages[providerId]
     if (usage.status !== 'ok') {
       return {
         ok: false,
@@ -274,11 +307,12 @@ export class EnergyCoordinator {
           this.usages = { ...this.usages, [closedId]: fresh }
           this.lastUpdatedAt = now
           this.store.setCachedUsages(this.usages, now)
+          this.processNotifications()
           this.emit()
         }
       } else {
         this.rateLimitBackoff.delete(closedId)
-        void this.syncAuthSource().then(() => this.refreshSingleProvider(closedId))
+        void this.syncAuthSources().then(() => this.refreshSingleProvider(closedId))
       }
     })
   }
@@ -287,9 +321,13 @@ export class EnergyCoordinator {
     await clearProviderSession(providerId)
     if (providerId === 'chatgpt') {
       this.store.clearImportedChatGptSession()
+    } else if (providerId === 'gemini') {
+      this.store.clearImportedGeminiCookie()
+    } else {
+      this.store.clearImportedClaudeCookie()
     }
     this.rateLimitBackoff.delete(providerId)
-    await this.syncAuthSource()
+    await this.syncAuthSources()
 
     const now = Date.now()
     this.usages = {
@@ -319,10 +357,23 @@ export class EnergyCoordinator {
     this.listeners.clear()
   }
 
-  private async syncAuthSource(): Promise<void> {
-    this.chatGptAuthSource = await resolveChatGptAuthSource(() =>
-      this.store.getImportedChatGptSession()
+  private processNotifications(): void {
+    this.alertStates = this.notifier.evaluateAndDispatch(
+      this.alertStates,
+      this.usages,
+      this.settings.enabledProviders,
+      this.settings.notificationsEnabled
     )
+    this.store.setAlertStates(this.alertStates)
+  }
+
+  private async syncAuthSources(): Promise<void> {
+    const [chatgpt, claude] = await Promise.all([
+      resolveChatGptAuthSource(() => this.store.getImportedChatGptSession()),
+      resolveClaudeAuthSource(() => this.store.getImportedClaudeCookie())
+    ])
+    const gemini = resolveGeminiAuthSource(() => this.store.getImportedGeminiCookie())
+    this.authSources = { chatgpt, gemini, claude }
   }
 
   private async refreshSingleProvider(providerId: ProviderId): Promise<void> {
@@ -333,12 +384,13 @@ export class EnergyCoordinator {
     this.activeRefreshCount += 1
     this.emit()
     try {
-      await this.syncAuthSource()
+      await this.syncAuthSources()
       const result = await adapter.collect()
       this.applyLiveResult(providerId, result.usage, Boolean(result.rateLimited))
       const now = Date.now()
       this.lastUpdatedAt = now
       this.store.setCachedUsages(this.usages, now)
+      this.processNotifications()
     } finally {
       this.activeRefreshCount = Math.max(0, this.activeRefreshCount - 1)
       this.emit()
@@ -376,10 +428,11 @@ export class EnergyCoordinator {
         this.usages = nudgeMockUsages(this.usages, now)
         this.lastUpdatedAt = now
         this.store.setCachedUsages(this.usages, now)
+        this.processNotifications()
         return
       }
 
-      await this.syncAuthSource()
+      await this.syncAuthSources()
       const now = Date.now()
       const targets = PROVIDER_ORDER.filter((id) => {
         if (!this.settings.enabledProviders[id]) return false
@@ -392,24 +445,6 @@ export class EnergyCoordinator {
         }
         return true
       })
-
-      for (const id of PROVIDER_ORDER) {
-        if (!this.registry.isSupported(id)) {
-          this.usages = {
-            ...this.usages,
-            [id]: {
-              id,
-              status: 'error',
-              sessionRemainingPct: null,
-              sessionResetAt: null,
-              weeklyRemainingPct: null,
-              weeklyResetAt: null,
-              updatedAt: now,
-              errorMessage: `${PROVIDER_META[id].name} 실연동은 Phase 3에서 추가 예정입니다. (설정에서 숨김 또는 Mock 모드 확인 가능)`
-            }
-          }
-        }
-      }
 
       const results = await Promise.all(
         targets.map(async (id) => {
@@ -428,6 +463,7 @@ export class EnergyCoordinator {
       const completedAt = Date.now()
       this.lastUpdatedAt = completedAt
       this.store.setCachedUsages(this.usages, completedAt)
+      this.processNotifications()
     } finally {
       this.activeRefreshCount = Math.max(0, this.activeRefreshCount - 1)
       this.emit()

@@ -14,8 +14,8 @@ export const IPC_CHANNELS = {
   UPDATE_SETTINGS: 'ai-energy:update-settings',
   SET_MOCK_SCENARIO: 'ai-energy:set-mock-scenario',
   OPEN_PROVIDER_LOGIN: 'ai-energy:open-provider-login',
-  IMPORT_CHATGPT_SESSION: 'ai-energy:import-chatgpt-session',
-  OPEN_CHATGPT_SESSION_PAGE: 'ai-energy:open-chatgpt-session-page',
+  IMPORT_PROVIDER_SESSION: 'ai-energy:import-provider-session',
+  OPEN_EXTERNAL_PROVIDER_PAGE: 'ai-energy:open-external-provider-page',
   DISCONNECT_PROVIDER: 'ai-energy:disconnect-provider',
   RESIZE_POPOVER: 'ai-energy:resize-popover',
   QUIT_APP: 'ai-energy:quit-app',
@@ -28,8 +28,8 @@ export interface AiEnergyApi {
   updateSettings: (patch: Partial<AppSettings>) => Promise<AppSnapshot>
   setMockScenario: (scenario: MockScenarioId) => Promise<AppSnapshot>
   openProviderLogin: (providerId: ProviderId) => Promise<LoginWindowResult>
-  importChatGptSession: (rawJson: string) => Promise<ImportSessionResult>
-  openChatGptSessionPage: () => Promise<void>
+  importProviderSession: (providerId: ProviderId, rawInput: string) => Promise<ImportSessionResult>
+  openExternalProviderPage: (providerId: ProviderId) => Promise<void>
   disconnectProvider: (providerId: ProviderId) => Promise<AppSnapshot>
   resizePopover: (height: number) => Promise<void>
   quitApp: () => Promise<void>

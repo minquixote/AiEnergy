@@ -17,7 +17,7 @@ const SUMMARY_DOT_COLOR: Record<EnergyLevel, string> = {
 
 export function App() {
   const [view, setView] = useState<'main' | 'settings'>('main')
-  const [expandChatGptConnect, setExpandChatGptConnect] = useState(false)
+  const [expandedProvider, setExpandedProvider] = useState<ProviderId | null>(null)
   const shellRef = useRef<HTMLDivElement | null>(null)
   const {
     snapshot,
@@ -27,8 +27,8 @@ export function App() {
     updateSettings,
     setMockScenario,
     openProviderLogin,
-    importChatGptSession,
-    openChatGptSessionPage,
+    importProviderSession,
+    openExternalProviderPage,
     disconnectProvider,
     quitApp
   } = useEnergyApp()
@@ -48,7 +48,7 @@ export function App() {
     const observer = new ResizeObserver(syncHeight)
     observer.observe(el)
     return () => observer.disconnect()
-  }, [view, snapshot, expandChatGptConnect])
+  }, [view, snapshot, expandedProvider])
 
   if (!snapshot) {
     return (
@@ -63,8 +63,8 @@ export function App() {
   const { traySummary } = snapshot
 
   const handleCardAction = (providerId: ProviderId): void => {
-    if (snapshot.settings.dataSourceMode === 'live' && providerId === 'chatgpt') {
-      setExpandChatGptConnect(true)
+    if (snapshot.settings.dataSourceMode === 'live') {
+      setExpandedProvider(providerId)
       setView('settings')
       return
     }
@@ -82,7 +82,7 @@ export function App() {
         now={now}
         onRefresh={() => void refreshNow()}
         onToggleView={() => {
-          setExpandChatGptConnect(false)
+          setExpandedProvider(null)
           setView((prev) => (prev === 'main' ? 'settings' : 'main'))
         }}
       />
@@ -112,7 +112,7 @@ export function App() {
                 now={now}
                 onOpenLogin={handleCardAction}
                 onOpenSettings={() => {
-                  setExpandChatGptConnect(false)
+                  setExpandedProvider(null)
                   setView('settings')
                 }}
               />
@@ -139,17 +139,17 @@ export function App() {
           settings={snapshot.settings}
           usages={snapshot.usages}
           platform={snapshot.platform}
-          chatGptAuthSource={snapshot.chatGptAuthSource}
-          initialExpandChatGptConnect={expandChatGptConnect}
+          authSources={snapshot.authSources}
+          initialExpandedProvider={expandedProvider}
           onUpdateSettings={(patch) => void updateSettings(patch)}
           onSelectMockScenario={(scenario) => void setMockScenario(scenario)}
           onOpenLogin={(providerId) => void openProviderLogin(providerId)}
-          onImportChatGptSession={importChatGptSession}
-          onOpenChatGptSessionPage={() => void openChatGptSessionPage()}
+          onImportProviderSession={importProviderSession}
+          onOpenExternalProviderPage={(providerId) => void openExternalProviderPage(providerId)}
           onDetectCodexCli={() => void refreshNow()}
           onDisconnect={(providerId) => void disconnectProvider(providerId)}
           onConnectSuccess={() => {
-            setExpandChatGptConnect(false)
+            setExpandedProvider(null)
             setView('main')
           }}
         />

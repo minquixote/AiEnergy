@@ -12,7 +12,6 @@ import {
   Terminal
 } from 'lucide-react'
 import {
-  LIVE_SUPPORTED_PROVIDERS,
   MOCK_SCENARIOS,
   PROVIDER_META,
   PROVIDER_ORDER,
@@ -20,11 +19,11 @@ import {
 } from '@shared/constants'
 import type {
   AppSettings,
-  ChatGptAuthSource,
   DataSourceMode,
   HostPlatform,
   ImportSessionResult,
   MockScenarioId,
+  ProviderAuthSource,
   ProviderId,
   ProviderUsage,
   ThemePreference
@@ -35,13 +34,13 @@ interface SettingsViewProps {
   settings: AppSettings
   usages: Record<ProviderId, ProviderUsage>
   platform: HostPlatform
-  chatGptAuthSource: ChatGptAuthSource
-  initialExpandChatGptConnect: boolean
+  authSources: Record<ProviderId, ProviderAuthSource>
+  initialExpandedProvider: ProviderId | null
   onUpdateSettings: (patch: Partial<AppSettings>) => void
   onSelectMockScenario: (scenario: MockScenarioId) => void
   onOpenLogin: (providerId: ProviderId) => void
-  onImportChatGptSession: (rawJson: string) => Promise<ImportSessionResult>
-  onOpenChatGptSessionPage: () => void
+  onImportProviderSession: (providerId: ProviderId, rawInput: string) => Promise<ImportSessionResult>
+  onOpenExternalProviderPage: (providerId: ProviderId) => void
   onDetectCodexCli: () => void
   onDisconnect: (providerId: ProviderId) => void
   onConnectSuccess: () => void
@@ -81,44 +80,67 @@ function ToggleSwitch({
   )
 }
 
-function getAuthSourceLabel(source: ChatGptAuthSource): string {
+function getAuthSourceLabel(source: ProviderAuthSource): string {
   switch (source) {
     case 'codex_cli':
       return 'Codex CLI 자동 연동 (~/.codex/auth.json)'
     case 'imported_session':
-      return '브라우저 세션 연동됨 (로컬 키체인 암호화)'
+      return '브라우저 세션 연동됨 (키체인 암호화)'
+    case 'imported_cookie':
+      return '브라우저 쿠키 연동됨 (키체인 암호화)'
     case 'browser_partition':
-      return '앱 내 이메일 로그인 세션'
+      return '앱 내 로그인 세션'
     default:
       return '미연결'
   }
+}
+
+function getCompactSubLabel(
+  enabled: boolean,
+  dataSourceMode: DataSourceMode,
+  isConnected: boolean,
+  source: ProviderAuthSource
+): string {
+  if (!enabled) return '숨김'
+  if (dataSourceMode === 'mock') return isConnected ? 'Mock 연동' : '로그인 필요'
+  if (!isConnected) return '연결 필요'
+  if (source === 'codex_cli') return 'Codex CLI'
+  if (source === 'imported_session') return '세션 연동됨'
+  if (source === 'imported_cookie') return '쿠키 연동됨'
+  return '연동됨'
 }
 
 export function SettingsView({
   settings,
   usages,
   platform,
-  chatGptAuthSource,
-  initialExpandChatGptConnect,
+  authSources,
+  initialExpandedProvider,
   onUpdateSettings,
   onSelectMockScenario,
   onOpenLogin,
-  onImportChatGptSession,
-  onOpenChatGptSessionPage,
+  onImportProviderSession,
+  onOpenExternalProviderPage,
   onDetectCodexCli,
   onDisconnect,
   onConnectSuccess
 }: SettingsViewProps) {
-  const [showChatGptConnect, setShowChatGptConnect] = useState(initialExpandChatGptConnect)
-  const [sessionInput, setSessionInput] = useState('')
-  const [importError, setImportError] = useState<string | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [expandedProvider, setExpandedProvider] = useState<ProviderId | null>(
+    initialExpandedProvider
+  )
+  const [inputs, setInputs] = useState<Record<ProviderId, string>>({
+    chatgpt: '',
+    gemini: '',
+    claude: ''
+  })
+  const [errors, setErrors] = useState<Partial<Record<ProviderId, string | null>>>({})
+  const [submittingId, setSubmittingId] = useState<ProviderId | null>(null)
 
   useEffect(() => {
-    if (initialExpandChatGptConnect) {
-      setShowChatGptConnect(true)
+    if (initialExpandedProvider) {
+      setExpandedProvider(initialExpandedProvider)
     }
-  }, [initialExpandChatGptConnect])
+  }, [initialExpandedProvider])
 
   const themeOptions: ReadonlyArray<{
     id: ThemePreference
@@ -135,20 +157,23 @@ export function SettingsView({
     { id: 'mock', label: 'Mock 테스트' }
   ]
 
-  const handleImportSubmit = async (): Promise<void> => {
-    setImportError(null)
-    setIsSubmitting(true)
+  const handleImportSubmit = async (providerId: ProviderId): Promise<void> => {
+    setErrors((prev) => ({ ...prev, [providerId]: null }))
+    setSubmittingId(providerId)
     try {
-      const result = await onImportChatGptSession(sessionInput)
+      const result = await onImportProviderSession(providerId, inputs[providerId])
       if (!result.ok) {
-        setImportError(result.error ?? '세션 연결에 실패했습니다.')
+        setErrors((prev) => ({
+          ...prev,
+          [providerId]: result.error ?? '연결에 실패했습니다.'
+        }))
         return
       }
-      setSessionInput('')
-      setShowChatGptConnect(false)
+      setInputs((prev) => ({ ...prev, [providerId]: '' }))
+      setExpandedProvider(null)
       onConnectSuccess()
     } finally {
-      setIsSubmitting(false)
+      setSubmittingId(null)
     }
   }
 
@@ -161,7 +186,7 @@ export function SettingsView({
             데이터 소스
           </h2>
           <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-            ChatGPT 실연동 지원
+            3종 플랫폼 실연동 지원
           </span>
         </div>
         <div className="grid grid-cols-2 gap-1.5">
@@ -203,25 +228,19 @@ export function SettingsView({
             const enabled = settings.enabledProviders[id]
             const usage = usages[id]
             const isConnected = usage.status === 'ok'
-            const isLiveSupported = LIVE_SUPPORTED_PROVIDERS.includes(id)
-            const isPhase3Pending = settings.dataSourceMode === 'live' && !isLiveSupported
-            const isLiveChatGpt = settings.dataSourceMode === 'live' && id === 'chatgpt'
+            const authSource = authSources[id]
+            const isLiveMode = settings.dataSourceMode === 'live'
+            const isExpanded = isLiveMode && enabled && expandedProvider === id
+            const isSubmitting = submittingId === id
+            const inputValue = inputs[id]
+            const errorMsg = errors[id]
 
-            const subLabel = !enabled
-              ? '숨김'
-              : isPhase3Pending
-                ? 'Phase 3 예정'
-                : isLiveChatGpt
-                  ? isConnected
-                    ? chatGptAuthSource === 'codex_cli'
-                      ? 'Codex CLI 자동 연동'
-                      : chatGptAuthSource === 'imported_session'
-                        ? '브라우저 세션 연동됨'
-                        : '연동됨'
-                    : '연결 필요'
-                  : isConnected
-                    ? '연동됨'
-                    : '로그인 필요'
+            const subLabel = getCompactSubLabel(
+              enabled,
+              settings.dataSourceMode,
+              isConnected,
+              authSource
+            )
 
             return (
               <div key={id} className="flex flex-col gap-1.5">
@@ -245,19 +264,21 @@ export function SettingsView({
                   </div>
 
                   <div className="flex items-center gap-1.5 shrink-0">
-                    {enabled && !isPhase3Pending && (
+                    {enabled && (
                       <>
-                        {isLiveChatGpt ? (
+                        {isLiveMode ? (
                           <button
-                            id="btn-toggle-chatgpt-connect"
+                            id={`btn-toggle-connect-${id}`}
                             type="button"
-                            onClick={() => setShowChatGptConnect((prev) => !prev)}
+                            onClick={() =>
+                              setExpandedProvider((prev) => (prev === id ? null : id))
+                            }
                             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] font-medium transition-colors cursor-pointer"
                             style={{
-                              backgroundColor: showChatGptConnect
+                              backgroundColor: isExpanded
                                 ? 'var(--text-primary)'
                                 : 'var(--surface-card)',
-                              color: showChatGptConnect
+                              color: isExpanded
                                 ? 'var(--surface-shell)'
                                 : 'var(--text-primary)',
                               border: '1px solid var(--border-hairline)'
@@ -283,7 +304,7 @@ export function SettingsView({
                           </button>
                         )}
 
-                        {(isConnected || (isLiveChatGpt && chatGptAuthSource !== 'none')) && (
+                        {(isConnected || (isLiveMode && authSource !== 'none')) && (
                           <button
                             id={`btn-disconnect-${id}`}
                             type="button"
@@ -307,22 +328,25 @@ export function SettingsView({
                       id={`toggle-provider-${id}`}
                       checked={enabled}
                       label={`${meta.name} 표시 토글`}
-                      onChange={(next) =>
+                      onChange={(next) => {
+                        if (!next && expandedProvider === id) {
+                          setExpandedProvider(null)
+                        }
                         onUpdateSettings({
                           enabledProviders: {
                             ...settings.enabledProviders,
                             [id]: next
                           }
                         })
-                      }
+                      }}
                     />
                   </div>
                 </div>
 
-                {/* Inline ChatGPT dual connection panel (Codex CLI auto-detect + Browser session paste) */}
-                {isLiveChatGpt && enabled && showChatGptConnect && (
+                {/* Tailored inline connection panel per provider */}
+                {isExpanded && (
                   <div
-                    id="panel-chatgpt-connect"
+                    id={`panel-connect-${id}`}
                     className="flex flex-col gap-2 rounded-lg p-2.5"
                     style={{
                       backgroundColor: 'var(--surface-shell)',
@@ -335,126 +359,296 @@ export function SettingsView({
                         className="truncate font-medium"
                         style={{
                           color:
-                            chatGptAuthSource !== 'none'
+                            authSource !== 'none'
                               ? 'var(--energy-high-text)'
                               : 'var(--text-muted)'
                         }}
                       >
-                        {getAuthSourceLabel(chatGptAuthSource)}
+                        {getAuthSourceLabel(authSource)}
                       </span>
                     </div>
 
-                    <div
-                      className="flex flex-col gap-1.5 pt-2"
-                      style={{ borderTop: '1px solid var(--border-hairline)' }}
-                    >
-                      <div className="text-[11px] font-semibold">
-                        방법 1. 브라우저 세션 붙여넣기 (Google 로그인 계정 권장)
-                      </div>
-                      <button
-                        id="btn-open-chatgpt-session-url"
-                        type="button"
-                        onClick={onOpenChatGptSessionPage}
-                        className="flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors cursor-pointer"
-                        style={{
-                          backgroundColor: 'var(--surface-subtle)',
-                          color: 'var(--text-primary)',
-                          border: '1px solid var(--border-hairline)'
-                        }}
+                    {id === 'chatgpt' && (
+                      <>
+                        <div
+                          className="flex flex-col gap-1.5 pt-2"
+                          style={{ borderTop: '1px solid var(--border-hairline)' }}
+                        >
+                          <div className="text-[11px] font-semibold">
+                            방법 1. 브라우저 세션 붙여넣기 (Google 로그인 계정 권장)
+                          </div>
+                          <button
+                            id="btn-open-external-chatgpt"
+                            type="button"
+                            onClick={() => onOpenExternalProviderPage('chatgpt')}
+                            className="flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium cursor-pointer"
+                            style={{
+                              backgroundColor: 'var(--surface-subtle)',
+                              color: 'var(--text-primary)',
+                              border: '1px solid var(--border-hairline)'
+                            }}
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            1. 기본 브라우저에서 세션 열기
+                          </button>
+
+                          <textarea
+                            id="input-session-chatgpt"
+                            rows={3}
+                            value={inputValue}
+                            onChange={(e) => {
+                              setInputs((prev) => ({ ...prev, chatgpt: e.target.value }))
+                              if (errorMsg) setErrors((prev) => ({ ...prev, chatgpt: null }))
+                            }}
+                            placeholder="2. 열린 페이지 전체 복사(Cmd+A, Cmd+C) 후 여기에 붙여넣기(Cmd+V)"
+                            className="w-full resize-none rounded-md p-2 text-[10.5px] leading-relaxed outline-none"
+                            style={{
+                              backgroundColor: 'var(--surface-card)',
+                              color: 'var(--text-primary)',
+                              border: '1px solid var(--border-strong)'
+                            }}
+                          />
+
+                          {errorMsg && (
+                            <p
+                              className="text-[10.5px] leading-snug"
+                              style={{ color: 'var(--energy-low-text)' }}
+                            >
+                              {errorMsg}
+                            </p>
+                          )}
+
+                          <button
+                            id="btn-submit-session-chatgpt"
+                            type="button"
+                            disabled={isSubmitting || !inputValue.trim()}
+                            onClick={() => void handleImportSubmit('chatgpt')}
+                            className="flex items-center justify-center gap-1.5 rounded-md py-1.5 text-[11px] font-semibold transition-opacity disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                            style={{
+                              backgroundColor: 'var(--text-primary)',
+                              color: 'var(--surface-shell)'
+                            }}
+                          >
+                            {isSubmitting ? (
+                              <RefreshCw className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Check className="h-3 w-3" />
+                            )}
+                            {isSubmitting ? '연결 확인 중...' : '세션 연결 (로컬 암호화 저장)'}
+                          </button>
+                        </div>
+
+                        <div
+                          className="flex flex-col gap-1.5 pt-2"
+                          style={{ borderTop: '1px solid var(--border-hairline)' }}
+                        >
+                          <div className="text-[11px] font-semibold">
+                            방법 2. Codex CLI 자동 연동 / 이메일 직접 로그인
+                          </div>
+                          <p
+                            className="text-[10px] leading-snug"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            터미널에서 <code className="font-mono">codex login</code>을 실행해 두면{' '}
+                            <code className="font-mono">~/.codex/auth.json</code>을 자동 인식합니다.
+                          </p>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <button
+                              id="btn-detect-codex-cli"
+                              type="button"
+                              onClick={onDetectCodexCli}
+                              className="flex items-center justify-center gap-1 rounded-md py-1.5 text-[10.5px] font-medium cursor-pointer"
+                              style={{
+                                backgroundColor: 'var(--surface-subtle)',
+                                color: 'var(--text-primary)'
+                              }}
+                            >
+                              <Terminal className="h-3 w-3" />
+                              Codex 세션 감지
+                            </button>
+                            <button
+                              id="btn-login-chatgpt"
+                              type="button"
+                              onClick={() => onOpenLogin('chatgpt')}
+                              className="flex items-center justify-center gap-1 rounded-md py-1.5 text-[10.5px] font-medium cursor-pointer"
+                              style={{
+                                backgroundColor: 'var(--surface-subtle)',
+                                color: 'var(--text-primary)'
+                              }}
+                            >
+                              <LogIn className="h-3 w-3" />
+                              이메일 로그인 창
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {id === 'gemini' && (
+                      <div
+                        className="flex flex-col gap-1.5 pt-2"
+                        style={{ borderTop: '1px solid var(--border-hairline)' }}
                       >
-                        <ExternalLink className="h-3 w-3" />
-                        1. 기본 브라우저에서 세션 열기
-                      </button>
+                        <div className="text-[11px] font-semibold">
+                          Gemini AI Pro / Ultra 웹 사용량 연결
+                        </div>
+                        <button
+                          id="btn-open-external-gemini"
+                          type="button"
+                          onClick={() => onOpenExternalProviderPage('gemini')}
+                          className="flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium cursor-pointer"
+                          style={{
+                            backgroundColor: 'var(--surface-subtle)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--border-hairline)'
+                          }}
+                        >
+                          <ExternalLink className="h-3 w-3 shrink-0" />
+                          1. Gemini 사용량 페이지 열기
+                        </button>
 
-                      <textarea
-                        id="input-chatgpt-session-json"
-                        rows={3}
-                        value={sessionInput}
-                        onChange={(e) => {
-                          setSessionInput(e.target.value)
-                          if (importError) setImportError(null)
-                        }}
-                        placeholder='2. 열린 페이지 전체 복사(Cmd+A, Cmd+C) 후 여기에 붙여넣기(Cmd+V)'
-                        className="w-full resize-none rounded-md p-2 text-[10.5px] leading-relaxed outline-none"
-                        style={{
-                          backgroundColor: 'var(--surface-card)',
-                          color: 'var(--text-primary)',
-                          border: '1px solid var(--border-strong)'
-                        }}
-                      />
-
-                      {importError && (
                         <p
-                          className="text-[10.5px] leading-snug"
-                          style={{ color: 'var(--energy-low-text)' }}
+                          className="text-[10px] leading-relaxed"
+                          style={{ color: 'var(--text-secondary)' }}
                         >
-                          {importError}
+                          2. 브라우저 개발자 도구(<code className="font-mono">⌥⌘I</code>) →{' '}
+                          <strong>Network</strong> 탭 → 새로고침(<code className="font-mono">⌘R</code>)
+                          후 <code className="font-mono">executeQuery</code> 우클릭 →{' '}
+                          <strong>Copy → Copy as cURL</strong> (또는 Cookie 헤더 복사)
                         </p>
-                      )}
 
-                      <button
-                        id="btn-submit-chatgpt-session"
-                        type="button"
-                        disabled={isSubmitting || !sessionInput.trim()}
-                        onClick={() => void handleImportSubmit()}
-                        className="flex items-center justify-center gap-1.5 rounded-md py-1.5 text-[11px] font-semibold transition-opacity disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
-                        style={{
-                          backgroundColor: 'var(--text-primary)',
-                          color: 'var(--surface-shell)'
-                        }}
-                      >
-                        {isSubmitting ? (
-                          <RefreshCw className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <Check className="h-3 w-3" />
+                        <textarea
+                          id="input-session-gemini"
+                          rows={3}
+                          value={inputValue}
+                          onChange={(e) => {
+                            setInputs((prev) => ({ ...prev, gemini: e.target.value }))
+                            if (errorMsg) setErrors((prev) => ({ ...prev, gemini: null }))
+                          }}
+                          placeholder="3. 복사한 Copy as cURL 전체 또는 Cookie 값을 붙여넣기(Cmd+V)"
+                          className="w-full resize-none rounded-md p-2 text-[10.5px] leading-relaxed outline-none"
+                          style={{
+                            backgroundColor: 'var(--surface-card)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--border-strong)'
+                          }}
+                        />
+
+                        {errorMsg && (
+                          <p
+                            className="text-[10.5px] leading-snug"
+                            style={{ color: 'var(--energy-low-text)' }}
+                          >
+                            {errorMsg}
+                          </p>
                         )}
-                        {isSubmitting ? '연결 확인 중...' : '세션 연결 (로컬 암호화 저장)'}
-                      </button>
-                    </div>
 
-                    <div
-                      className="flex flex-col gap-1.5 pt-2"
-                      style={{ borderTop: '1px solid var(--border-hairline)' }}
-                    >
-                      <div className="text-[11px] font-semibold">
-                        방법 2. Codex CLI 자동 연동 / 이메일 직접 로그인
+                        <button
+                          id="btn-submit-session-gemini"
+                          type="button"
+                          disabled={isSubmitting || !inputValue.trim()}
+                          onClick={() => void handleImportSubmit('gemini')}
+                          className="flex items-center justify-center gap-1.5 rounded-md py-1.5 text-[11px] font-semibold transition-opacity disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                          style={{
+                            backgroundColor: 'var(--text-primary)',
+                            color: 'var(--surface-shell)'
+                          }}
+                        >
+                          {isSubmitting ? (
+                            <RefreshCw className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Check className="h-3 w-3" />
+                          )}
+                          {isSubmitting ? '연결 확인 중...' : 'Gemini 연결 (로컬 암호화 저장)'}
+                        </button>
                       </div>
-                      <p
-                        className="text-[10px] leading-snug"
-                        style={{ color: 'var(--text-muted)' }}
+                    )}
+
+                    {id === 'claude' && (
+                      <div
+                        className="flex flex-col gap-1.5 pt-2"
+                        style={{ borderTop: '1px solid var(--border-hairline)' }}
                       >
-                        터미널에서 <code className="font-mono">codex login</code>을 실행해 두면{' '}
-                        <code className="font-mono">~/.codex/auth.json</code>을 자동 인식합니다.
-                      </p>
-                      <div className="grid grid-cols-2 gap-1.5">
+                        <div className="text-[11px] font-semibold">
+                          Claude Pro / Max 세션 연결
+                        </div>
                         <button
-                          id="btn-detect-codex-cli"
+                          id="btn-open-external-claude"
                           type="button"
-                          onClick={onDetectCodexCli}
-                          className="flex items-center justify-center gap-1 rounded-md py-1.5 text-[10.5px] font-medium cursor-pointer"
+                          onClick={() => onOpenExternalProviderPage('claude')}
+                          className="flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium cursor-pointer"
                           style={{
                             backgroundColor: 'var(--surface-subtle)',
-                            color: 'var(--text-primary)'
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--border-hairline)'
                           }}
                         >
-                          <Terminal className="h-3 w-3" />
-                          Codex 세션 감지
+                          <ExternalLink className="h-3 w-3 shrink-0" />
+                          1. Claude 사용량 페이지 열기
                         </button>
-                        <button
-                          id="btn-login-chatgpt"
-                          type="button"
-                          onClick={() => onOpenLogin('chatgpt')}
-                          className="flex items-center justify-center gap-1 rounded-md py-1.5 text-[10.5px] font-medium cursor-pointer"
+
+                        <textarea
+                          id="input-session-claude"
+                          rows={2}
+                          value={inputValue}
+                          onChange={(e) => {
+                            setInputs((prev) => ({ ...prev, claude: e.target.value }))
+                            if (errorMsg) setErrors((prev) => ({ ...prev, claude: null }))
+                          }}
+                          placeholder="sessionKey (sk-ant-sid...) 또는 Copy as cURL 붙여넣기"
+                          className="w-full resize-none rounded-md p-2 text-[10.5px] leading-relaxed outline-none"
                           style={{
-                            backgroundColor: 'var(--surface-subtle)',
-                            color: 'var(--text-primary)'
+                            backgroundColor: 'var(--surface-card)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--border-strong)'
                           }}
-                        >
-                          <LogIn className="h-3 w-3" />
-                          이메일 로그인 창
-                        </button>
+                        />
+
+                        {errorMsg && (
+                          <p
+                            className="text-[10.5px] leading-snug"
+                            style={{ color: 'var(--energy-low-text)' }}
+                          >
+                            {errorMsg}
+                          </p>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            id="btn-submit-session-claude"
+                            type="button"
+                            disabled={isSubmitting || !inputValue.trim()}
+                            onClick={() => void handleImportSubmit('claude')}
+                            className="flex items-center justify-center gap-1 rounded-md py-1.5 text-[10.5px] font-semibold transition-opacity disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                            style={{
+                              backgroundColor: 'var(--text-primary)',
+                              color: 'var(--surface-shell)'
+                            }}
+                          >
+                            {isSubmitting ? (
+                              <RefreshCw className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Check className="h-3 w-3" />
+                            )}
+                            세션 연결
+                          </button>
+
+                          <button
+                            id="btn-login-claude"
+                            type="button"
+                            onClick={() => onOpenLogin('claude')}
+                            className="flex items-center justify-center gap-1 rounded-md py-1.5 text-[10.5px] font-medium cursor-pointer"
+                            style={{
+                              backgroundColor: 'var(--surface-subtle)',
+                              color: 'var(--text-primary)'
+                            }}
+                          >
+                            <LogIn className="h-3 w-3" />
+                            이메일 로그인 창
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -562,7 +756,7 @@ export function SettingsView({
         </div>
       </section>
 
-      {/* Section 3: Phase 1 Mock scenario switcher */}
+      {/* Section 3: Mock scenario switcher */}
       {settings.dataSourceMode === 'mock' && (
         <section className="surface-card p-3">
           <div className="mb-2 flex items-center justify-between">
@@ -570,7 +764,7 @@ export function SettingsView({
               Mock 테스트 시나리오
             </h2>
             <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-              Phase 1 UI 검증
+              UI 및 알림 검증
             </span>
           </div>
 

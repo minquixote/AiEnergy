@@ -61,7 +61,18 @@ export interface TraySummary {
 
 export type HostPlatform = 'darwin' | 'win32' | 'linux' | 'other'
 
-export type ChatGptAuthSource = 'codex_cli' | 'imported_session' | 'browser_partition' | 'none'
+export type ProviderAuthSource =
+  | 'codex_cli'
+  | 'imported_session'
+  | 'imported_cookie'
+  | 'browser_partition'
+  | 'none'
+
+export interface ProviderAlertState {
+  lastPct: number | null
+  lowAlertSent: boolean
+  resetAlertSent: boolean
+}
 
 export interface AppSnapshot {
   usages: Record<ProviderId, ProviderUsage>
@@ -72,7 +83,7 @@ export interface AppSnapshot {
   platform: HostPlatform
   systemTheme: 'dark' | 'light'
   isRefreshing: boolean
-  chatGptAuthSource: ChatGptAuthSource
+  authSources: Record<ProviderId, ProviderAuthSource>
 }
 
 export interface RefreshResult {

@@ -30,8 +30,10 @@ if (!gotLock) {
     }
 
     const store = new AppStore()
-    coordinator = new EnergyCoordinator(store)
     popover = new PopoverManager()
+    coordinator = new EnergyCoordinator(store, {
+      onNotificationClick: () => popover?.show()
+    })
 
     tray = new TrayManager({
       onTogglePopover: () => popover?.toggle(),

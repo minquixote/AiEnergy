@@ -4,7 +4,11 @@ import type { AppSettings, MockScenarioId, ProviderId } from '../shared/types'
 import type { PopoverManager } from './popover'
 import type { EnergyCoordinator } from './scheduler'
 
-const CHATGPT_SESSION_URL = 'https://chatgpt.com/api/auth/session'
+const EXTERNAL_PROVIDER_URLS: Record<ProviderId, string> = {
+  chatgpt: 'https://chatgpt.com/api/auth/session',
+  gemini: 'https://gemini.google.com/usage',
+  claude: 'https://claude.ai/settings/usage'
+}
 
 export function registerIpcHandlers(
   coordinator: EnergyCoordinator,
@@ -31,12 +35,21 @@ export function registerIpcHandlers(
     return coordinator.openLogin(providerId)
   })
 
-  ipcMain.handle(IPC_CHANNELS.IMPORT_CHATGPT_SESSION, async (_event, rawJson: string) => {
-    return coordinator.importChatGptSession(typeof rawJson === 'string' ? rawJson : '')
-  })
+  ipcMain.handle(
+    IPC_CHANNELS.IMPORT_PROVIDER_SESSION,
+    async (_event, providerId: ProviderId, rawInput: string) => {
+      return coordinator.importProviderSession(
+        providerId,
+        typeof rawInput === 'string' ? rawInput : ''
+      )
+    }
+  )
 
-  ipcMain.handle(IPC_CHANNELS.OPEN_CHATGPT_SESSION_PAGE, async () => {
-    await shell.openExternal(CHATGPT_SESSION_URL)
+  ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL_PROVIDER_PAGE, async (_event, providerId: ProviderId) => {
+    const url = EXTERNAL_PROVIDER_URLS[providerId]
+    if (url) {
+      await shell.openExternal(url)
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.DISCONNECT_PROVIDER, async (_event, providerId: ProviderId) => {

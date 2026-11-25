@@ -13,12 +13,17 @@ npm install
 npm run dev
 ```
 
-### Phase 2 (ChatGPT Pro 실연동) 테스트 방법
-1. 앱 실행 시 기본 모드는 **실연동 (`LIVE`)** 으로 시작합니다.
-2. Mac에 OpenAI Codex CLI(`~/.codex/auth.json`)가 로그인되어 있으면 **자동 인식**해 즉시 실시간 잔여량을 표시합니다.
-3. Codex CLI가 없거나 Google 계정 로그인을 쓰시는 경우, **ChatGPT** 카드를 클릭해 열리는 연결 패널에서 **[1. 기본 브라우저에서 세션 열기]** → `Cmd+A`, `Cmd+C` → 입력 칸에 `Cmd+V` → **[세션 연결]** 을 누르면 macOS 키체인 암호화(`safeStorage`)로 로컬 저장되고 0.3초 만에 실시간 잔여량이 반영됩니다.
-4. macOS 상단 메뉴바에는 활성화된 모든 플랫폼이 `[플랫폼 아이콘] [배터리 %]` 형태로 나란히 표시됩니다.
-5. 아직 미연동 플랫폼(Gemini/Claude)은 설정에서 숨기거나, 설정의 **데이터 소스**를 `Mock 테스트`로 전환해 UI를 확인할 수 있습니다.
+### 실연동 (`LIVE`) 설정 방법
+1. **ChatGPT (Plus / Pro)**
+   - Mac에 Codex CLI(`~/.codex/auth.json`)가 로그인되어 있으면 자동 연동됩니다.
+   - 또는 **ChatGPT 카드 클릭 → `[1. 기본 브라우저에서 세션 열기]` → 전체 복사(`Cmd+A`, `Cmd+C`) → 붙여넣기(`Cmd+V`) → `[세션 연결]`** (로컬 키체인 암호화 저장).
+2. **Google Gemini (AI Pro / Ultra)**
+   - **Gemini 카드 클릭 → `[1. 브라우저에서 gemini.google.com/usage 열기]`**
+   - 브라우저 개발자 도구(`⌥⌘I`) → **Network** 탭 → 새로고침(`⌘R`) → `executeQuery` 요청 우클릭 → **Copy → Copy as cURL** (또는 Cookie 헤더 복사) → 붙여넣기 → **`[Gemini 연결]`**.
+3. **Claude (Pro / Max)**
+   - **Claude 카드 클릭** 후 `sessionKey` / `Copy as cURL` 붙여넣기 또는 앱 내 이메일 로그인 창으로 연결할 수 있으며, 미구독 시 설정에서 숨길 수 있습니다.
+4. **OS 데스크톱 알림**
+   - 활성화된 플랫폼의 세션 잔여량이 **20% 이하로 최초 진입**하거나 **100%로 초기화 회복** 시 1회 데스크톱 알림을 발송합니다. (설정에서 켜고 끄기 가능)
 
 ## 주요 스크립트
 

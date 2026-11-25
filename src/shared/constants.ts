@@ -24,8 +24,8 @@ export const PROVIDER_META: Record<ProviderId, ProviderMeta> = {
     name: 'Gemini',
     planLabel: 'AI Pro / Ultra',
     partition: 'persist:gemini',
-    loginUrl: 'https://gemini.google.com',
-    usageUrl: 'https://gemini.google.com'
+    loginUrl: 'https://gemini.google.com/usage',
+    usageUrl: 'https://gemini.google.com/usage'
   },
   claude: {
     id: 'claude',
@@ -37,7 +37,7 @@ export const PROVIDER_META: Record<ProviderId, ProviderMeta> = {
   }
 }
 
-export const LIVE_SUPPORTED_PROVIDERS: readonly ProviderId[] = ['chatgpt']
+export const LIVE_SUPPORTED_PROVIDERS: readonly ProviderId[] = ['chatgpt', 'gemini', 'claude']
 
 export const REFRESH_INTERVAL_OPTIONS: readonly RefreshIntervalMinutes[] = [1, 5, 10, 15]
 

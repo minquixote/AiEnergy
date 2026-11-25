@@ -169,7 +169,7 @@ function createBrowserFallbackBridge(): AiEnergyApi {
     platform: 'darwin',
     systemTheme: getSystemTheme(),
     isRefreshing: false,
-    chatGptAuthSource: 'none'
+    authSources: { chatgpt: 'none', gemini: 'none', claude: 'none' }
   })
 
   const emit = (): void => {
@@ -241,18 +241,26 @@ function createBrowserFallbackBridge(): AiEnergyApi {
         note: '브라우저 미리보기 모드에서 재연결을 시뮬레이션했습니다.'
       }
     },
-    importChatGptSession: async (rawJson) => {
-      if (!rawJson.trim()) {
-        return { ok: false, error: '세션 JSON을 붙여넣어 주세요.', snapshot: snapshot() }
+    importProviderSession: async (providerId, rawInput) => {
+      if (!rawInput.trim()) {
+        return { ok: false, error: '인증 정보를 붙여넣어 주세요.', snapshot: snapshot() }
       }
       const now = Date.now()
-      usages = { ...usages, chatgpt: buildBrowserFallbackUsages('healthy', now).chatgpt }
+      usages = {
+        ...usages,
+        [providerId]: buildBrowserFallbackUsages('healthy', now)[providerId]
+      }
       lastUpdatedAt = now
       emit()
       return { ok: true, snapshot: snapshot() }
     },
-    openChatGptSessionPage: async () => {
-      window.open('https://chatgpt.com/api/auth/session', '_blank', 'noopener,noreferrer')
+    openExternalProviderPage: async (providerId) => {
+      const urls: Record<ProviderId, string> = {
+        chatgpt: 'https://chatgpt.com/api/auth/session',
+        gemini: 'https://gemini.google.com/usage',
+        claude: 'https://claude.ai/settings/usage'
+      }
+      window.open(urls[providerId], '_blank', 'noopener,noreferrer')
     },
     disconnectProvider: async (providerId) => {
       const now = Date.now()

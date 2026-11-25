@@ -1,6 +1,6 @@
 import { net, session } from 'electron'
 import { PROVIDER_META } from '../../shared/constants'
-import type { ChatGptAuthSource, ProviderUsage } from '../../shared/types'
+import type { ProviderAuthSource, ProviderUsage } from '../../shared/types'
 import {
   attachNetworkJsonCapture,
   delay,
@@ -249,7 +249,7 @@ async function readPageDiagnostics(win: Electron.BrowserWindow): Promise<{
 
 export async function resolveChatGptAuthSource(
   getImportedSession: () => ChatGptCredential | null
-): Promise<ChatGptAuthSource> {
+): Promise<ProviderAuthSource> {
   if (readCodexCliCredential()) return 'codex_cli'
   if (getImportedSession()) return 'imported_session'
   if (await hasAnyChatGptCookie()) return 'browser_partition'

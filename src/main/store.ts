@@ -3,11 +3,15 @@ import Store from 'electron-store'
 import { DEFAULT_SETTINGS, REFRESH_INTERVAL_OPTIONS } from '../shared/constants'
 import type {
   AppSettings,
+  ProviderAlertState,
   ProviderId,
   ProviderUsage,
   RefreshIntervalMinutes
 } from '../shared/types'
+import { createInitialAlertStateMap } from './notifier'
 import type { ChatGptCredential } from './providers/chatgptAuth'
+import type { ClaudeCookieCredential } from './providers/claudeAuth'
+import type { GeminiCookieCredential } from './providers/geminiAuth'
 
 const CURRENT_SCHEMA_VERSION = 2
 
@@ -22,6 +26,9 @@ interface PersistedSchema {
   cachedUsages: Record<ProviderId, ProviderUsage> | null
   lastUpdatedAt: number | null
   importedChatGptSession: StoredCredentialBlob | null
+  importedGeminiCookie: StoredCredentialBlob | null
+  importedClaudeCookie: StoredCredentialBlob | null
+  alertStates: Record<ProviderId, ProviderAlertState>
 }
 
 function sanitizeRefreshInterval(
@@ -62,6 +69,31 @@ export function mergeSettings(
   }
 }
 
+function encodeSecretBlob(value: unknown): StoredCredentialBlob {
+  const serialized = JSON.stringify(value)
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      const cipher = safeStorage.encryptString(serialized).toString('base64')
+      return { encrypted: true, payload: cipher }
+    }
+  } catch {
+    // Fallback to local unencrypted JSON if OS keychain encryption is unavailable
+  }
+  return { encrypted: false, payload: serialized }
+}
+
+function decodeSecretBlob<T>(blob: StoredCredentialBlob | null | undefined): T | null {
+  if (!blob || typeof blob.payload !== 'string') return null
+  try {
+    const jsonText = blob.encrypted
+      ? safeStorage.decryptString(Buffer.from(blob.payload, 'base64'))
+      : blob.payload
+    return JSON.parse(jsonText) as T
+  } catch {
+    return null
+  }
+}
+
 export class AppStore {
   private readonly store: Store<PersistedSchema>
 
@@ -73,7 +105,10 @@ export class AppStore {
         settings: DEFAULT_SETTINGS,
         cachedUsages: null,
         lastUpdatedAt: null,
-        importedChatGptSession: null
+        importedChatGptSession: null,
+        importedGeminiCookie: null,
+        importedClaudeCookie: null,
+        alertStates: createInitialAlertStateMap()
       }
     })
 
@@ -123,44 +158,84 @@ export class AppStore {
     return this.store.get('lastUpdatedAt') ?? null
   }
 
-  saveImportedChatGptSession(credential: ChatGptCredential): void {
-    const serialized = JSON.stringify(credential)
-    try {
-      if (safeStorage.isEncryptionAvailable()) {
-        const cipher = safeStorage.encryptString(serialized).toString('base64')
-        this.store.set('importedChatGptSession', { encrypted: true, payload: cipher })
-        return
-      }
-    } catch {
-      // Fallback to local unencrypted JSON if OS keychain encryption is unavailable
+  getAlertStates(): Record<ProviderId, ProviderAlertState> {
+    const defaults = createInitialAlertStateMap()
+    const raw = this.store.get('alertStates')
+    if (!raw) return defaults
+    return {
+      chatgpt: raw.chatgpt ?? defaults.chatgpt,
+      gemini: raw.gemini ?? defaults.gemini,
+      claude: raw.claude ?? defaults.claude
     }
-    this.store.set('importedChatGptSession', { encrypted: false, payload: serialized })
+  }
+
+  setAlertStates(states: Record<ProviderId, ProviderAlertState>): void {
+    this.store.set('alertStates', states)
+  }
+
+  resetAlertStates(): void {
+    this.store.set('alertStates', createInitialAlertStateMap())
+  }
+
+  // ChatGPT imported session (kept on original key so existing Phase 2 sessions survive seamlessly)
+  saveImportedChatGptSession(credential: ChatGptCredential): void {
+    this.store.set('importedChatGptSession', encodeSecretBlob(credential))
   }
 
   getImportedChatGptSession(): ChatGptCredential | null {
-    const blob = this.store.get('importedChatGptSession')
-    if (!blob || typeof blob.payload !== 'string') return null
-
-    try {
-      const jsonText = blob.encrypted
-        ? safeStorage.decryptString(Buffer.from(blob.payload, 'base64'))
-        : blob.payload
-      const parsed = JSON.parse(jsonText) as ChatGptCredential
-      if (parsed && typeof parsed.accessToken === 'string' && parsed.accessToken.length >= 20) {
-        return {
-          accessToken: parsed.accessToken,
-          accountId: typeof parsed.accountId === 'string' ? parsed.accountId : null,
-          expiresAt: typeof parsed.expiresAt === 'string' ? parsed.expiresAt : null,
-          source: 'imported_session'
-        }
-      }
+    const parsed = decodeSecretBlob<ChatGptCredential>(this.store.get('importedChatGptSession'))
+    if (!parsed || typeof parsed.accessToken !== 'string' || parsed.accessToken.length < 20) {
       return null
-    } catch {
-      return null
+    }
+    return {
+      accessToken: parsed.accessToken,
+      accountId: typeof parsed.accountId === 'string' ? parsed.accountId : null,
+      expiresAt: typeof parsed.expiresAt === 'string' ? parsed.expiresAt : null,
+      source: 'imported_session'
     }
   }
 
   clearImportedChatGptSession(): void {
     this.store.set('importedChatGptSession', null)
+  }
+
+  // Gemini imported Cookie header
+  saveImportedGeminiCookie(credential: GeminiCookieCredential): void {
+    this.store.set('importedGeminiCookie', encodeSecretBlob(credential))
+  }
+
+  getImportedGeminiCookie(): GeminiCookieCredential | null {
+    const parsed = decodeSecretBlob<GeminiCookieCredential>(this.store.get('importedGeminiCookie'))
+    if (!parsed || typeof parsed.cookieHeader !== 'string' || !parsed.cookieHeader.includes('=')) {
+      return null
+    }
+    return {
+      cookieHeader: parsed.cookieHeader,
+      source: 'imported_cookie'
+    }
+  }
+
+  clearImportedGeminiCookie(): void {
+    this.store.set('importedGeminiCookie', null)
+  }
+
+  // Claude imported sessionKey / Cookie header
+  saveImportedClaudeCookie(credential: ClaudeCookieCredential): void {
+    this.store.set('importedClaudeCookie', encodeSecretBlob(credential))
+  }
+
+  getImportedClaudeCookie(): ClaudeCookieCredential | null {
+    const parsed = decodeSecretBlob<ClaudeCookieCredential>(this.store.get('importedClaudeCookie'))
+    if (!parsed || typeof parsed.cookieHeader !== 'string' || !parsed.cookieHeader.includes('=')) {
+      return null
+    }
+    return {
+      cookieHeader: parsed.cookieHeader,
+      source: 'imported_cookie'
+    }
+  }
+
+  clearImportedClaudeCookie(): void {
+    this.store.set('importedClaudeCookie', null)
   }
 }
