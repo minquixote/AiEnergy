@@ -11,6 +11,9 @@ const api: AiEnergyApi = {
     ipcRenderer.invoke(IPC_CHANNELS.SET_MOCK_SCENARIO, scenario),
   openProviderLogin: (providerId: ProviderId) =>
     ipcRenderer.invoke(IPC_CHANNELS.OPEN_PROVIDER_LOGIN, providerId),
+  importChatGptSession: (rawJson: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.IMPORT_CHATGPT_SESSION, rawJson),
+  openChatGptSessionPage: () => ipcRenderer.invoke(IPC_CHANNELS.OPEN_CHATGPT_SESSION_PAGE),
   disconnectProvider: (providerId: ProviderId) =>
     ipcRenderer.invoke(IPC_CHANNELS.DISCONNECT_PROVIDER, providerId),
   resizePopover: (height: number) => ipcRenderer.invoke(IPC_CHANNELS.RESIZE_POPOVER, height),

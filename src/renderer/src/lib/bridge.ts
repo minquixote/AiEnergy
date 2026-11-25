@@ -168,7 +168,8 @@ function createBrowserFallbackBridge(): AiEnergyApi {
     cooldownUntil,
     platform: 'darwin',
     systemTheme: getSystemTheme(),
-    isRefreshing: false
+    isRefreshing: false,
+    chatGptAuthSource: 'none'
   })
 
   const emit = (): void => {
@@ -234,7 +235,24 @@ function createBrowserFallbackBridge(): AiEnergyApi {
       }
       lastUpdatedAt = now
       emit()
-      return { opened: true, providerId, note: '브라우저 미리보기 모드에서 재연결을 시뮬레이션했습니다.' }
+      return {
+        opened: true,
+        providerId,
+        note: '브라우저 미리보기 모드에서 재연결을 시뮬레이션했습니다.'
+      }
+    },
+    importChatGptSession: async (rawJson) => {
+      if (!rawJson.trim()) {
+        return { ok: false, error: '세션 JSON을 붙여넣어 주세요.', snapshot: snapshot() }
+      }
+      const now = Date.now()
+      usages = { ...usages, chatgpt: buildBrowserFallbackUsages('healthy', now).chatgpt }
+      lastUpdatedAt = now
+      emit()
+      return { ok: true, snapshot: snapshot() }
+    },
+    openChatGptSessionPage: async () => {
+      window.open('https://chatgpt.com/api/auth/session', '_blank', 'noopener,noreferrer')
     },
     disconnectProvider: async (providerId) => {
       const now = Date.now()

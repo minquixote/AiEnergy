@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { AppSettings, AppSnapshot, MockScenarioId, ProviderId } from '@shared/types'
+import type {
+  AppSettings,
+  AppSnapshot,
+  ImportSessionResult,
+  MockScenarioId,
+  ProviderId
+} from '@shared/types'
 import { getEnergyBridge } from '../lib/bridge'
 
 export interface UseEnergyAppState {
@@ -10,6 +16,8 @@ export interface UseEnergyAppState {
   updateSettings: (patch: Partial<AppSettings>) => Promise<void>
   setMockScenario: (scenario: MockScenarioId) => Promise<void>
   openProviderLogin: (providerId: ProviderId) => Promise<void>
+  importChatGptSession: (rawJson: string) => Promise<ImportSessionResult>
+  openChatGptSessionPage: () => Promise<void>
   disconnectProvider: (providerId: ProviderId) => Promise<void>
   quitApp: () => Promise<void>
 }
@@ -25,7 +33,7 @@ export function useEnergyApp(): UseEnergyAppState {
 
   useEffect(() => {
     if (!toastMessage) return
-    const timer = setTimeout(() => setToastMessage(null), 2600)
+    const timer = setTimeout(() => setToastMessage(null), 2800)
     return () => clearTimeout(timer)
   }, [toastMessage])
 
@@ -47,7 +55,6 @@ export function useEnergyApp(): UseEnergyAppState {
     }
   }, [])
 
-  // Local 1-second tick for cooldown badge, relative update time, and reset countdown
   useEffect(() => {
     const interval = setInterval(() => {
       setNow(Date.now())
@@ -55,7 +62,6 @@ export function useEnergyApp(): UseEnergyAppState {
     return () => clearInterval(interval)
   }, [])
 
-  // Sync resolved theme to root data-theme attribute
   useEffect(() => {
     if (!snapshot) return
     const pref = snapshot.settings.theme
@@ -90,6 +96,23 @@ export function useEnergyApp(): UseEnergyAppState {
     [showToast]
   )
 
+  const importChatGptSession = useCallback(
+    async (rawJson: string): Promise<ImportSessionResult> => {
+      const result = await getEnergyBridge().importChatGptSession(rawJson)
+      setSnapshot(result.snapshot)
+      if (result.ok) {
+        showToast('ChatGPT 세션이 연결되었습니다.')
+      }
+      return result
+    },
+    [showToast]
+  )
+
+  const openChatGptSessionPage = useCallback(async () => {
+    await getEnergyBridge().openChatGptSessionPage()
+    showToast('기본 브라우저에서 세션 페이지를 열었습니다. 전체 복사 후 붙여넣어 주세요.')
+  }, [showToast])
+
   const disconnectProvider = useCallback(
     async (providerId: ProviderId) => {
       const next = await getEnergyBridge().disconnectProvider(providerId)
@@ -111,6 +134,8 @@ export function useEnergyApp(): UseEnergyAppState {
     updateSettings,
     setMockScenario,
     openProviderLogin,
+    importChatGptSession,
+    openChatGptSessionPage,
     disconnectProvider,
     quitApp
   }

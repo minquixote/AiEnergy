@@ -4,15 +4,19 @@ import { computeTraySummary, getCooldownRemainingMs } from '../shared/usage'
 import type {
   AppSettings,
   AppSnapshot,
+  ChatGptAuthSource,
+  ImportSessionResult,
   LoginWindowResult,
   MockScenarioId,
   ProviderId,
   ProviderUsage,
   RefreshResult
 } from '../shared/types'
+import { resolveChatGptAuthSource } from './providers/chatgpt'
+import { parseImportedChatGptSession } from './providers/chatgptAuth'
 import { clearProviderSession, openProviderLoginWindow } from './providers/loginWindow'
 import { buildMockUsages, nudgeMockUsages } from './providers/mock'
-import { getLiveProviderAdapter, isLiveProviderSupported } from './providers/registry'
+import { createProviderRegistry, type ProviderRegistry } from './providers/registry'
 import type { AppStore } from './store'
 
 export type SnapshotListener = (snapshot: AppSnapshot) => void
@@ -25,10 +29,13 @@ interface BackoffState {
   until: number
 }
 
-function buildInitialLiveUsages(now: number = Date.now()): Record<ProviderId, ProviderUsage> {
+function buildInitialLiveUsages(
+  registry: ProviderRegistry,
+  now: number = Date.now()
+): Record<ProviderId, ProviderUsage> {
   const result = {} as Record<ProviderId, ProviderUsage>
   for (const id of PROVIDER_ORDER) {
-    if (isLiveProviderSupported(id)) {
+    if (registry.isSupported(id)) {
       result[id] = {
         id,
         status: 'auth_required',
@@ -37,7 +44,7 @@ function buildInitialLiveUsages(now: number = Date.now()): Record<ProviderId, Pr
         weeklyRemainingPct: null,
         weeklyResetAt: null,
         updatedAt: now,
-        errorMessage: `${PROVIDER_META[id].name} 연결 상태를 확인하는 중입니다. 로그인이 필요하면 카드를 클릭해 주세요.`
+        errorMessage: `${PROVIDER_META[id].name} 연결 상태를 확인하는 중입니다.`
       }
     } else {
       result[id] = {
@@ -57,6 +64,7 @@ function buildInitialLiveUsages(now: number = Date.now()): Record<ProviderId, Pr
 
 export class EnergyCoordinator {
   private readonly store: AppStore
+  private readonly registry: ProviderRegistry
   private readonly listeners = new Set<SnapshotListener>()
   private readonly rateLimitBackoff = new Map<ProviderId, BackoffState>()
 
@@ -65,6 +73,7 @@ export class EnergyCoordinator {
   private lastUpdatedAt: number | null
   private cooldownUntil = 0
   private activeRefreshCount = 0
+  private chatGptAuthSource: ChatGptAuthSource = 'none'
   private refreshTimer: NodeJS.Timeout | null = null
 
   private get isRefreshing(): boolean {
@@ -73,6 +82,7 @@ export class EnergyCoordinator {
 
   constructor(store: AppStore) {
     this.store = store
+    this.registry = createProviderRegistry(store)
     this.settings = store.getSettings()
 
     const cached = store.getCachedUsages()
@@ -86,7 +96,7 @@ export class EnergyCoordinator {
       this.lastUpdatedAt = now
       this.store.setCachedUsages(this.usages, now)
     } else {
-      this.usages = buildInitialLiveUsages(Date.now())
+      this.usages = buildInitialLiveUsages(this.registry, Date.now())
       this.lastUpdatedAt = null
     }
 
@@ -102,8 +112,8 @@ export class EnergyCoordinator {
     })
 
     this.restartAutoRefreshTimer()
+    void this.syncAuthSource()
 
-    // Trigger immediate live collection on app startup so fresh ChatGPT data appears right away
     if (this.settings.dataSourceMode === 'live') {
       void this.refreshInternal(false)
     }
@@ -132,7 +142,8 @@ export class EnergyCoordinator {
       cooldownUntil: this.cooldownUntil,
       platform,
       systemTheme: nativeTheme.shouldUseDarkColors ? 'dark' : 'light',
-      isRefreshing: this.isRefreshing
+      isRefreshing: this.isRefreshing,
+      chatGptAuthSource: this.chatGptAuthSource
     }
   }
 
@@ -148,7 +159,6 @@ export class EnergyCoordinator {
     }
 
     this.cooldownUntil = now + MANUAL_REFRESH_COOLDOWN_MS
-    // Explicit manual refresh overrides any automatic 429 backoff
     this.rateLimitBackoff.clear()
     await this.refreshInternal(true)
     return {
@@ -178,7 +188,7 @@ export class EnergyCoordinator {
         this.lastUpdatedAt = now
         this.store.setCachedUsages(this.usages, now)
       } else {
-        this.usages = buildInitialLiveUsages(Date.now())
+        this.usages = buildInitialLiveUsages(this.registry, Date.now())
         this.lastUpdatedAt = null
         this.store.clearCachedUsages()
         void this.refreshInternal(false)
@@ -194,10 +204,9 @@ export class EnergyCoordinator {
       this.store.setCachedUsages(this.usages, now)
     }
 
-    // If a live-supported provider was just toggled ON in live mode, fetch it promptly
     if (this.settings.dataSourceMode === 'live' && patch.enabledProviders) {
       for (const id of PROVIDER_ORDER) {
-        if (!prevEnabled[id] && this.settings.enabledProviders[id] && isLiveProviderSupported(id)) {
+        if (!prevEnabled[id] && this.settings.enabledProviders[id] && this.registry.isSupported(id)) {
           void this.refreshSingleProvider(id)
         }
       }
@@ -220,6 +229,41 @@ export class EnergyCoordinator {
     return this.getSnapshot()
   }
 
+  async importChatGptSession(rawJson: string): Promise<ImportSessionResult> {
+    const parsed = parseImportedChatGptSession(rawJson)
+    if (!parsed.ok || !parsed.credential) {
+      return {
+        ok: false,
+        error: parsed.error ?? '세션 JSON을 해석할 수 없습니다.',
+        snapshot: this.getSnapshot()
+      }
+    }
+
+    this.store.saveImportedChatGptSession(parsed.credential)
+    this.rateLimitBackoff.delete('chatgpt')
+    await this.syncAuthSource()
+
+    if (this.settings.dataSourceMode !== 'live') {
+      this.settings = this.store.updateSettings({ dataSourceMode: 'live' })
+    }
+
+    await this.refreshSingleProvider('chatgpt')
+    const snapshot = this.getSnapshot()
+    const usage = snapshot.usages.chatgpt
+    if (usage.status !== 'ok') {
+      return {
+        ok: false,
+        error: usage.errorMessage ?? '세션은 저장되었지만 사용량 조회에 실패했습니다.',
+        snapshot
+      }
+    }
+
+    return {
+      ok: true,
+      snapshot
+    }
+  }
+
   openLogin(providerId: ProviderId): LoginWindowResult {
     return openProviderLoginWindow(providerId, (closedId) => {
       if (this.settings.dataSourceMode === 'mock') {
@@ -234,14 +278,19 @@ export class EnergyCoordinator {
         }
       } else {
         this.rateLimitBackoff.delete(closedId)
-        void this.refreshSingleProvider(closedId)
+        void this.syncAuthSource().then(() => this.refreshSingleProvider(closedId))
       }
     })
   }
 
   async disconnectProvider(providerId: ProviderId): Promise<AppSnapshot> {
     await clearProviderSession(providerId)
+    if (providerId === 'chatgpt') {
+      this.store.clearImportedChatGptSession()
+    }
     this.rateLimitBackoff.delete(providerId)
+    await this.syncAuthSource()
+
     const now = Date.now()
     this.usages = {
       ...this.usages,
@@ -253,7 +302,7 @@ export class EnergyCoordinator {
         weeklyRemainingPct: null,
         weeklyResetAt: null,
         updatedAt: now,
-        errorMessage: '연결이 해제되었습니다. 카드를 클릭해 다시 로그인해 주세요.'
+        errorMessage: '연결이 해제되었습니다. 카드를 클릭해 다시 연결해 주세요.'
       }
     }
     this.lastUpdatedAt = now
@@ -270,14 +319,21 @@ export class EnergyCoordinator {
     this.listeners.clear()
   }
 
+  private async syncAuthSource(): Promise<void> {
+    this.chatGptAuthSource = await resolveChatGptAuthSource(() =>
+      this.store.getImportedChatGptSession()
+    )
+  }
+
   private async refreshSingleProvider(providerId: ProviderId): Promise<void> {
     if (this.settings.dataSourceMode !== 'live') return
-    const adapter = getLiveProviderAdapter(providerId)
+    const adapter = this.registry.get(providerId)
     if (!adapter) return
 
     this.activeRefreshCount += 1
     this.emit()
     try {
+      await this.syncAuthSource()
       const result = await adapter.collect()
       this.applyLiveResult(providerId, result.usage, Boolean(result.rateLimited))
       const now = Date.now()
@@ -323,10 +379,11 @@ export class EnergyCoordinator {
         return
       }
 
+      await this.syncAuthSource()
       const now = Date.now()
       const targets = PROVIDER_ORDER.filter((id) => {
         if (!this.settings.enabledProviders[id]) return false
-        if (!isLiveProviderSupported(id)) return false
+        if (!this.registry.isSupported(id)) return false
         if (!isManual) {
           const backoff = this.rateLimitBackoff.get(id)
           if (backoff && now < backoff.until) {
@@ -337,7 +394,7 @@ export class EnergyCoordinator {
       })
 
       for (const id of PROVIDER_ORDER) {
-        if (!isLiveProviderSupported(id)) {
+        if (!this.registry.isSupported(id)) {
           this.usages = {
             ...this.usages,
             [id]: {
@@ -356,7 +413,7 @@ export class EnergyCoordinator {
 
       const results = await Promise.all(
         targets.map(async (id) => {
-          const adapter = getLiveProviderAdapter(id)
+          const adapter = this.registry.get(id)
           if (!adapter) return null
           const res = await adapter.collect()
           return { id, res }

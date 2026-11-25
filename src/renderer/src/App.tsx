@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Power } from 'lucide-react'
 import { PROVIDER_META, PROVIDER_ORDER } from '@shared/constants'
-import type { EnergyLevel } from '@shared/types'
+import type { EnergyLevel, ProviderId } from '@shared/types'
 import { Header } from './components/Header'
 import { ProviderCard } from './components/ProviderCard'
 import { SettingsView } from './components/SettingsView'
@@ -17,6 +17,7 @@ const SUMMARY_DOT_COLOR: Record<EnergyLevel, string> = {
 
 export function App() {
   const [view, setView] = useState<'main' | 'settings'>('main')
+  const [expandChatGptConnect, setExpandChatGptConnect] = useState(false)
   const shellRef = useRef<HTMLDivElement | null>(null)
   const {
     snapshot,
@@ -26,11 +27,12 @@ export function App() {
     updateSettings,
     setMockScenario,
     openProviderLogin,
+    importChatGptSession,
+    openChatGptSessionPage,
     disconnectProvider,
     quitApp
   } = useEnergyApp()
 
-  // Keep Electron popover window height tightly matched to rendered content
   useEffect(() => {
     const el = shellRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
@@ -46,7 +48,7 @@ export function App() {
     const observer = new ResizeObserver(syncHeight)
     observer.observe(el)
     return () => observer.disconnect()
-  }, [view, snapshot])
+  }, [view, snapshot, expandChatGptConnect])
 
   if (!snapshot) {
     return (
@@ -60,6 +62,15 @@ export function App() {
   const hiddenCount = PROVIDER_ORDER.length - enabledIds.length
   const { traySummary } = snapshot
 
+  const handleCardAction = (providerId: ProviderId): void => {
+    if (snapshot.settings.dataSourceMode === 'live' && providerId === 'chatgpt') {
+      setExpandChatGptConnect(true)
+      setView('settings')
+      return
+    }
+    void openProviderLogin(providerId)
+  }
+
   return (
     <div ref={shellRef} className="popover-shell flex flex-col">
       <Header
@@ -70,7 +81,10 @@ export function App() {
         dataSourceMode={snapshot.settings.dataSourceMode}
         now={now}
         onRefresh={() => void refreshNow()}
-        onToggleView={() => setView((prev) => (prev === 'main' ? 'settings' : 'main'))}
+        onToggleView={() => {
+          setExpandChatGptConnect(false)
+          setView((prev) => (prev === 'main' ? 'settings' : 'main'))
+        }}
       />
 
       {toastMessage && (
@@ -96,8 +110,11 @@ export function App() {
                 usage={snapshot.usages[id]}
                 dataSourceMode={snapshot.settings.dataSourceMode}
                 now={now}
-                onOpenLogin={(providerId) => void openProviderLogin(providerId)}
-                onOpenSettings={() => setView('settings')}
+                onOpenLogin={handleCardAction}
+                onOpenSettings={() => {
+                  setExpandChatGptConnect(false)
+                  setView('settings')
+                }}
               />
             ))
           ) : (
@@ -122,10 +139,19 @@ export function App() {
           settings={snapshot.settings}
           usages={snapshot.usages}
           platform={snapshot.platform}
+          chatGptAuthSource={snapshot.chatGptAuthSource}
+          initialExpandChatGptConnect={expandChatGptConnect}
           onUpdateSettings={(patch) => void updateSettings(patch)}
           onSelectMockScenario={(scenario) => void setMockScenario(scenario)}
           onOpenLogin={(providerId) => void openProviderLogin(providerId)}
+          onImportChatGptSession={importChatGptSession}
+          onOpenChatGptSessionPage={() => void openChatGptSessionPage()}
+          onDetectCodexCli={() => void refreshNow()}
           onDisconnect={(providerId) => void disconnectProvider(providerId)}
+          onConnectSuccess={() => {
+            setExpandChatGptConnect(false)
+            setView('main')
+          }}
         />
       )}
 

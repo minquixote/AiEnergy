@@ -84,6 +84,11 @@ body,
   overflow: hidden;
 }
 
+input,
+textarea {
+  user-select: text;
+}
+
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }

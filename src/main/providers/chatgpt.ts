@@ -1,6 +1,6 @@
-import { session } from 'electron'
+import { net, session } from 'electron'
 import { PROVIDER_META } from '../../shared/constants'
-import type { ProviderUsage } from '../../shared/types'
+import type { ChatGptAuthSource, ProviderUsage } from '../../shared/types'
 import {
   attachNetworkJsonCapture,
   delay,
@@ -11,12 +11,14 @@ import {
   type ProviderAdapter,
   type ProviderCollectResult
 } from './base'
+import { readCodexCliCredential, type ChatGptCredential } from './chatgptAuth'
 import {
   buildChatGptProviderUsage,
   parseChatGptUsageDomText,
   parseChatGptUsageJson
 } from './chatgptParser'
 
+const CHATGPT_WHAM_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage'
 const CHATGPT_USAGE_URLS = [
   'https://chatgpt.com/codex/settings/usage',
   'https://chatgpt.com/#settings/Usage'
@@ -64,7 +66,7 @@ function makeErrorResult(
   }
   return {
     usage,
-    strategy: 'dom_fallback',
+    strategy: 'session_fetch',
     httpStatus: options?.httpStatus,
     rateLimited: options?.rateLimited,
     diagnostic: options?.diagnostic ?? message
@@ -78,10 +80,80 @@ async function hasAnyChatGptCookie(): Promise<boolean> {
 }
 
 /**
- * Fetches `/api/auth/session` and `/backend-api/wham/usage` from inside the logged-in
- * `chatgpt.com` window context so cookies and origin headers match a standard browser tab.
+ * Queries `https://chatgpt.com/backend-api/wham/usage` directly using Electron's `net.fetch`
+ * with a Bearer token from `~/.codex/auth.json` or an imported Chrome/Safari browser session.
+ * No hidden BrowserWindow is created, so collection completes in ~0.3s and avoids Google webview blocks.
  */
+async function collectWithDirectToken(
+  credential: ChatGptCredential
+): Promise<ProviderCollectResult> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 12_000)
+
+  try {
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      Authorization: `Bearer ${credential.accessToken}`
+    }
+    if (credential.accountId) {
+      headers['ChatGPT-Account-Id'] = credential.accountId
+    }
+
+    const res = await net.fetch(CHATGPT_WHAM_USAGE_URL, {
+      method: 'GET',
+      headers,
+      signal: controller.signal
+    })
+
+    if (res.status === 401 || res.status === 403) {
+      const msg =
+        credential.source === 'codex_cli'
+          ? 'Codex CLI 세션(~/.codex/auth.json)이 만료되었습니다. 터미널에서 codex login을 실행하거나 설정에서 브라우저 세션을 붙여넣어 주세요.'
+          : '가져온 ChatGPT 브라우저 세션이 만료되었습니다. 설정에서 세션을 다시 붙여넣어 주세요.'
+      return makeAuthRequiredResult(msg, res.status)
+    }
+
+    if (res.status === 429) {
+      return makeErrorResult(
+        'ChatGPT 요청 제한(429)이 감지되었습니다. 잠시 후 자동으로 다시 시도합니다.',
+        { httpStatus: 429, rateLimited: true }
+      )
+    }
+
+    if (!res.ok) {
+      return makeErrorResult(`ChatGPT 사용량 조회에 실패했습니다 (HTTP ${res.status}).`, {
+        httpStatus: res.status
+      })
+    }
+
+    const payload = (await res.json().catch(() => null)) as unknown
+    const parsed = parseChatGptUsageJson(payload)
+    if (!parsed) {
+      return makeErrorResult(
+        'ChatGPT 사용량 응답 형식을 해석하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        { httpStatus: res.status }
+      )
+    }
+
+    return {
+      usage: buildChatGptProviderUsage(parsed),
+      strategy: 'session_fetch',
+      httpStatus: res.status,
+      diagnostic: `${credential.source} 직접 조회 완료 (${parsed.planType ?? 'unknown'})`
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return makeErrorResult(`ChatGPT 직접 조회 중 네트워크 오류: ${msg}`, { diagnostic: msg })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 async function fetchWhamUsageInPage(win: Electron.BrowserWindow): Promise<InPageFetchOutcome> {
+  if (win.isDestroyed() || win.webContents.isDestroyed()) {
+    return { kind: 'error', message: '수집 창이 종료되었습니다.' }
+  }
+
   const script = `(async () => {
     try {
       const sessionRes = await fetch('/api/auth/session', {
@@ -164,6 +236,9 @@ async function readPageDiagnostics(win: Electron.BrowserWindow): Promise<{
   title: string
   text: string
 }> {
+  if (win.isDestroyed() || win.webContents.isDestroyed()) {
+    return { url: '', title: '', text: '' }
+  }
   const url = win.webContents.getURL()
   const title = win.getTitle()
   const text = (await win.webContents
@@ -172,171 +247,182 @@ async function readPageDiagnostics(win: Electron.BrowserWindow): Promise<{
   return { url, title, text }
 }
 
-export const chatgptAdapter: ProviderAdapter = {
-  id: 'chatgpt',
+export async function resolveChatGptAuthSource(
+  getImportedSession: () => ChatGptCredential | null
+): Promise<ChatGptAuthSource> {
+  if (readCodexCliCredential()) return 'codex_cli'
+  if (getImportedSession()) return 'imported_session'
+  if (await hasAnyChatGptCookie()) return 'browser_partition'
+  return 'none'
+}
 
-  collect(): Promise<ProviderCollectResult> {
-    return runSingleFlightCollection('chatgpt', async () => {
-      if (!(await hasAnyChatGptCookie())) {
-        return makeAuthRequiredResult(
-          'ChatGPT 로그인이 필요합니다. 카드를 클릭해 공식 페이지에서 로그인해 주세요.'
-        )
-      }
+export function createChatGptAdapter(
+  getImportedSession: () => ChatGptCredential | null
+): ProviderAdapter {
+  return {
+    id: 'chatgpt',
 
-      try {
-        return await withHiddenCollectorWindow(
-          { providerId: 'chatgpt', timeoutMs: 22_000 },
-          async (win, signal) => {
-            const capture = await attachNetworkJsonCapture(win, (url) =>
-              /chatgpt\.com\/backend-api\/(?:wham\/)?usage/i.test(url)
-            )
+    collect(): Promise<ProviderCollectResult> {
+      return runSingleFlightCollection('chatgpt', async () => {
+        // Tier 1: Official Codex CLI local credentials (~/.codex/auth.json)
+        const codexCred = readCodexCliCredential()
+        if (codexCred) {
+          const direct = await collectWithDirectToken(codexCred)
+          if (direct.usage.status === 'ok' || direct.rateLimited) {
+            return direct
+          }
+          // If Codex token expired, allow falling through to imported browser session if user provided one
+          const importedFallback = getImportedSession()
+          if (importedFallback) {
+            return collectWithDirectToken(importedFallback)
+          }
+          return direct
+        }
 
-            try {
-              // Navigate to the ChatGPT usage page so SPA triggers official usage requests
-              await loadPageUntilReady(win, CHATGPT_USAGE_URLS[0], 12_000)
-              if (signal.aborted) {
-                return makeErrorResult('사용량 수집이 중단되었습니다.')
-              }
+        // Tier 2: User-imported Chrome/Safari browser session (encrypted locally via safeStorage)
+        const importedCred = getImportedSession()
+        if (importedCred) {
+          return collectWithDirectToken(importedCred)
+        }
 
-              // Brief settle for redirects or Cloudflare/login gates
-              await delay(900)
-              const pageInfo = await readPageDiagnostics(win)
-              const authCheck = inspectAuthOrChallengeText(
-                pageInfo.url,
-                pageInfo.title,
-                pageInfo.text
+        // Tier 3: Embedded persist:chatgpt partition fallback (for direct email-code login users)
+        if (!(await hasAnyChatGptCookie())) {
+          return makeAuthRequiredResult(
+            'ChatGPT 연결이 필요합니다. 카드를 클릭해 브라우저 세션 붙여넣기 또는 로그인을 진행해 주세요.'
+          )
+        }
+
+        try {
+          return await withHiddenCollectorWindow(
+            { providerId: 'chatgpt', timeoutMs: 22_000 },
+            async (win, signal) => {
+              const capture = await attachNetworkJsonCapture(win, (url) =>
+                /chatgpt\.com\/backend-api\/(?:wham\/)?usage/i.test(url)
               )
 
-              if (authCheck.blockedOrUnauthenticated) {
-                const msg =
-                  authCheck.reason === 'bot_challenge'
-                    ? '보안 확인이 필요합니다. 카드를 클릭해 로그인 창에서 직접 확인해 주세요.'
-                    : 'ChatGPT 로그인 세션이 만료되었습니다. 카드를 클릭해 다시 로그인해 주세요.'
-                return makeAuthRequiredResult(msg)
-              }
-
-              // Priority 1: Check if CDP already intercepted the official JSON usage response
-              const intercepted = await capture.waitForMatch(
-                (entry) => parseChatGptUsageJson(entry.body) !== null,
-                2_800
-              )
-              if (intercepted) {
-                const parsed = parseChatGptUsageJson(intercepted.body)
-                if (parsed) {
-                  return {
-                    usage: buildChatGptProviderUsage(parsed),
-                    strategy: 'cdp_json',
-                    httpStatus: intercepted.status,
-                    diagnostic: `CDP JSON 수집 완료 (${parsed.planType ?? 'unknown'})`
-                  }
+              try {
+                await loadPageUntilReady(win, CHATGPT_USAGE_URLS[0], 12_000)
+                if (signal.aborted || win.isDestroyed()) {
+                  return makeErrorResult('사용량 수집이 중단되었습니다.')
                 }
-              }
 
-              // Check if CDP observed 401/403 or 429 on usage endpoint
-              const cdp429 = capture.errorStatuses.find((e) => e.status === 429)
-              if (cdp429) {
-                return makeErrorResult(
-                  'ChatGPT 요청 제한(429)이 감지되었습니다. 잠시 후 자동으로 다시 시도합니다.',
-                  { httpStatus: 429, rateLimited: true }
-                )
-              }
-              const cdpAuth = capture.errorStatuses.find(
-                (e) => e.status === 401 || e.status === 403
-              )
-              if (cdpAuth) {
-                return makeAuthRequiredResult(
-                  'ChatGPT 로그인 세션이 만료되었습니다. 카드를 클릭해 다시 로그인해 주세요.',
-                  cdpAuth.status
-                )
-              }
-
-              // Priority 2: Direct same-origin session + wham/usage JSON fetch inside logged-in chatgpt.com origin
-              const fetchOutcome = await fetchWhamUsageInPage(win)
-              if (fetchOutcome.kind === 'auth_required') {
-                return makeAuthRequiredResult(
-                  'ChatGPT 로그인 세션이 만료되었습니다. 카드를 클릭해 다시 로그인해 주세요.',
-                  fetchOutcome.status
-                )
-              }
-              if (fetchOutcome.kind === 'rate_limited') {
-                return makeErrorResult(
-                  'ChatGPT 요청 제한(429)이 감지되었습니다. 잠시 후 자동으로 다시 시도합니다.',
-                  { httpStatus: 429, rateLimited: true }
-                )
-              }
-              if (fetchOutcome.kind === 'ok') {
-                const parsed = parseChatGptUsageJson(fetchOutcome.payload)
-                if (parsed) {
-                  return {
-                    usage: buildChatGptProviderUsage(parsed),
-                    strategy: 'session_fetch',
-                    httpStatus: fetchOutcome.status,
-                    diagnostic: `Session JSON 수집 완료 (${parsed.planType ?? 'unknown'})`
-                  }
+                await delay(900)
+                if (signal.aborted || win.isDestroyed()) {
+                  return makeErrorResult('사용량 수집이 중단되었습니다.')
                 }
-              }
 
-              // Priority 3: DOM text fallback on rendered usage page (codex usage -> unified Settings > Usage)
-              await delay(1_200)
-              const refreshedPage = await readPageDiagnostics(win)
-              const domParsed = parseChatGptUsageDomText(refreshedPage.text)
-              if (domParsed) {
-                return {
-                  usage: buildChatGptProviderUsage(domParsed),
-                  strategy: 'dom_fallback',
-                  diagnostic: 'DOM 텍스트 파싱으로 수집 완료'
+                const pageInfo = await readPageDiagnostics(win)
+                const authCheck = inspectAuthOrChallengeText(
+                  pageInfo.url,
+                  pageInfo.title,
+                  pageInfo.text
+                )
+
+                if (authCheck.blockedOrUnauthenticated) {
+                  const msg =
+                    authCheck.reason === 'bot_challenge'
+                      ? '보안 확인이 필요합니다. 설정에서 브라우저 세션 붙여넣기를 사용하거나 로그인 창에서 확인해 주세요.'
+                      : 'ChatGPT 로그인 세션이 만료되었습니다. 설정에서 브라우저 세션 붙여넣기 또는 다시 로그인해 주세요.'
+                  return makeAuthRequiredResult(msg)
                 }
-              }
 
-              if (!signal.aborted) {
-                await loadPageUntilReady(win, CHATGPT_USAGE_URLS[1], 8_000)
-                await delay(1_200)
-                const settingsIntercepted = await capture.waitForMatch(
+                const intercepted = await capture.waitForMatch(
                   (entry) => parseChatGptUsageJson(entry.body) !== null,
-                  1_500
+                  2_800
                 )
-                if (settingsIntercepted) {
-                  const parsed = parseChatGptUsageJson(settingsIntercepted.body)
+                if (intercepted) {
+                  const parsed = parseChatGptUsageJson(intercepted.body)
                   if (parsed) {
                     return {
                       usage: buildChatGptProviderUsage(parsed),
                       strategy: 'cdp_json',
-                      httpStatus: settingsIntercepted.status,
-                      diagnostic: `Settings CDP JSON 수집 완료 (${parsed.planType ?? 'unknown'})`
+                      httpStatus: intercepted.status,
+                      diagnostic: `CDP JSON 수집 완료 (${parsed.planType ?? 'unknown'})`
                     }
                   }
                 }
 
-                const settingsPage = await readPageDiagnostics(win)
-                const settingsDomParsed = parseChatGptUsageDomText(settingsPage.text)
-                if (settingsDomParsed) {
-                  return {
-                    usage: buildChatGptProviderUsage(settingsDomParsed),
-                    strategy: 'dom_fallback',
-                    diagnostic: 'Settings > Usage DOM 파싱으로 수집 완료'
+                const cdp429 = capture.errorStatuses.find((e) => e.status === 429)
+                if (cdp429) {
+                  return makeErrorResult(
+                    'ChatGPT 요청 제한(429)이 감지되었습니다. 잠시 후 자동으로 다시 시도합니다.',
+                    { httpStatus: 429, rateLimited: true }
+                  )
+                }
+                const cdpAuth = capture.errorStatuses.find(
+                  (e) => e.status === 401 || e.status === 403
+                )
+                if (cdpAuth) {
+                  return makeAuthRequiredResult(
+                    'ChatGPT 로그인 세션이 만료되었습니다. 설정에서 다시 연결해 주세요.',
+                    cdpAuth.status
+                  )
+                }
+
+                if (signal.aborted || win.isDestroyed()) {
+                  return makeErrorResult('사용량 수집이 중단되었습니다.')
+                }
+
+                const fetchOutcome = await fetchWhamUsageInPage(win)
+                if (fetchOutcome.kind === 'auth_required') {
+                  return makeAuthRequiredResult(
+                    'ChatGPT 로그인 세션이 만료되었습니다. 설정에서 브라우저 세션을 붙여넣거나 다시 로그인해 주세요.',
+                    fetchOutcome.status
+                  )
+                }
+                if (fetchOutcome.kind === 'rate_limited') {
+                  return makeErrorResult(
+                    'ChatGPT 요청 제한(429)이 감지되었습니다. 잠시 후 자동으로 다시 시도합니다.',
+                    { httpStatus: 429, rateLimited: true }
+                  )
+                }
+                if (fetchOutcome.kind === 'ok') {
+                  const parsed = parseChatGptUsageJson(fetchOutcome.payload)
+                  if (parsed) {
+                    return {
+                      usage: buildChatGptProviderUsage(parsed),
+                      strategy: 'session_fetch',
+                      httpStatus: fetchOutcome.status,
+                      diagnostic: `Session JSON 수집 완료 (${parsed.planType ?? 'unknown'})`
+                    }
                   }
                 }
-              }
 
-              const detailSuffix = fetchOutcome.status ? ` (HTTP ${fetchOutcome.status})` : ''
-              return makeErrorResult(
-                `ChatGPT 사용량 정보를 찾지 못했습니다${detailSuffix}. 로그인 상태를 확인하거나 잠시 후 다시 시도해 주세요.`,
-                {
-                  httpStatus: fetchOutcome.status,
-                  diagnostic: fetchOutcome.message ?? `URL: ${refreshedPage.url}`
+                await delay(1_000)
+                if (signal.aborted || win.isDestroyed()) {
+                  return makeErrorResult('사용량 수집이 중단되었습니다.')
                 }
-              )
-            } finally {
-              capture.dispose()
+
+                const refreshedPage = await readPageDiagnostics(win)
+                const domParsed = parseChatGptUsageDomText(refreshedPage.text)
+                if (domParsed) {
+                  return {
+                    usage: buildChatGptProviderUsage(domParsed),
+                    strategy: 'dom_fallback',
+                    diagnostic: 'DOM 텍스트 파싱으로 수집 완료'
+                  }
+                }
+
+                const detailSuffix = fetchOutcome.status ? ` (HTTP ${fetchOutcome.status})` : ''
+                return makeErrorResult(
+                  `ChatGPT 사용량 정보를 찾지 못했습니다${detailSuffix}. 설정에서 브라우저 세션 붙여넣기를 사용해 보세요.`,
+                  {
+                    httpStatus: fetchOutcome.status,
+                    diagnostic: fetchOutcome.message ?? `URL: ${refreshedPage.url}`
+                  }
+                )
+              } finally {
+                capture.dispose()
+              }
             }
-          }
-        )
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        return makeErrorResult(`ChatGPT 조회 중 오류가 발생했습니다: ${msg}`, {
-          diagnostic: msg
-        })
-      }
-    })
+          )
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          return makeErrorResult(`ChatGPT 조회 중 오류가 발생했습니다: ${msg}`, {
+            diagnostic: msg
+          })
+        }
+      })
+    }
   }
 }

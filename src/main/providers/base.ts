@@ -304,19 +304,27 @@ export async function loadPageUntilReady(
   url: string,
   timeoutMs = 12_000
 ): Promise<void> {
+  if (win.isDestroyed() || win.webContents.isDestroyed()) return
+
   await new Promise<void>((resolve, reject) => {
     let settled = false
     const finish = (err?: Error): void => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      win.webContents.removeListener('dom-ready', onReady)
-      win.webContents.removeListener('did-fail-load', onFail)
+      if (!win.isDestroyed()) {
+        win.removeListener('closed', onClosed)
+        if (!win.webContents.isDestroyed()) {
+          win.webContents.removeListener('dom-ready', onReady)
+          win.webContents.removeListener('did-fail-load', onFail)
+        }
+      }
       if (err) reject(err)
       else resolve()
     }
 
     const onReady = (): void => finish()
+    const onClosed = (): void => finish()
     const onFail = (
       _event: Electron.Event,
       errorCode: number,
@@ -330,11 +338,15 @@ export async function loadPageUntilReady(
     }
 
     const timer = setTimeout(() => finish(), timeoutMs)
+    win.once('closed', onClosed)
     win.webContents.once('dom-ready', onReady)
     win.webContents.on('did-fail-load', onFail)
     void win.loadURL(url).catch((err: unknown) => {
       const code = (err as { code?: string })?.code
-      if (code === 'ERR_ABORTED') return
+      if (code === 'ERR_ABORTED' || win.isDestroyed()) {
+        finish()
+        return
+      }
       finish(err instanceof Error ? err : new Error(String(err)))
     })
   })

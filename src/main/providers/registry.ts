@@ -1,15 +1,20 @@
 import type { ProviderId } from '../../shared/types'
+import type { AppStore } from '../store'
 import type { ProviderAdapter } from './base'
-import { chatgptAdapter } from './chatgpt'
+import { createChatGptAdapter } from './chatgpt'
 
-const ADAPTERS: Partial<Record<ProviderId, ProviderAdapter>> = {
-  chatgpt: chatgptAdapter
+export interface ProviderRegistry {
+  get(id: ProviderId): ProviderAdapter | null
+  isSupported(id: ProviderId): boolean
 }
 
-export function getLiveProviderAdapter(id: ProviderId): ProviderAdapter | null {
-  return ADAPTERS[id] ?? null
-}
+export function createProviderRegistry(store: AppStore): ProviderRegistry {
+  const adapters: Partial<Record<ProviderId, ProviderAdapter>> = {
+    chatgpt: createChatGptAdapter(() => store.getImportedChatGptSession())
+  }
 
-export function isLiveProviderSupported(id: ProviderId): boolean {
-  return Boolean(ADAPTERS[id])
+  return {
+    get: (id) => adapters[id] ?? null,
+    isSupported: (id) => Boolean(adapters[id])
+  }
 }

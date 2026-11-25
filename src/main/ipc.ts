@@ -1,8 +1,10 @@
-import { app, ipcMain } from 'electron'
+import { app, ipcMain, shell } from 'electron'
 import { IPC_CHANNELS } from '../shared/ipc'
 import type { AppSettings, MockScenarioId, ProviderId } from '../shared/types'
 import type { PopoverManager } from './popover'
 import type { EnergyCoordinator } from './scheduler'
+
+const CHATGPT_SESSION_URL = 'https://chatgpt.com/api/auth/session'
 
 export function registerIpcHandlers(
   coordinator: EnergyCoordinator,
@@ -27,6 +29,14 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.OPEN_PROVIDER_LOGIN, (_event, providerId: ProviderId) => {
     popover.hide()
     return coordinator.openLogin(providerId)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.IMPORT_CHATGPT_SESSION, async (_event, rawJson: string) => {
+    return coordinator.importChatGptSession(typeof rawJson === 'string' ? rawJson : '')
+  })
+
+  ipcMain.handle(IPC_CHANNELS.OPEN_CHATGPT_SESSION_PAGE, async () => {
+    await shell.openExternal(CHATGPT_SESSION_URL)
   })
 
   ipcMain.handle(IPC_CHANNELS.DISCONNECT_PROVIDER, async (_event, providerId: ProviderId) => {

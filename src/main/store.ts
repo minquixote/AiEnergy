@@ -1,3 +1,4 @@
+import { safeStorage } from 'electron'
 import Store from 'electron-store'
 import { DEFAULT_SETTINGS, REFRESH_INTERVAL_OPTIONS } from '../shared/constants'
 import type {
@@ -6,14 +7,21 @@ import type {
   ProviderUsage,
   RefreshIntervalMinutes
 } from '../shared/types'
+import type { ChatGptCredential } from './providers/chatgptAuth'
 
 const CURRENT_SCHEMA_VERSION = 2
+
+interface StoredCredentialBlob {
+  encrypted: boolean
+  payload: string
+}
 
 interface PersistedSchema {
   schemaVersion: number
   settings: AppSettings
   cachedUsages: Record<ProviderId, ProviderUsage> | null
   lastUpdatedAt: number | null
+  importedChatGptSession: StoredCredentialBlob | null
 }
 
 function sanitizeRefreshInterval(
@@ -64,7 +72,8 @@ export class AppStore {
         schemaVersion: CURRENT_SCHEMA_VERSION,
         settings: DEFAULT_SETTINGS,
         cachedUsages: null,
-        lastUpdatedAt: null
+        lastUpdatedAt: null,
+        importedChatGptSession: null
       }
     })
 
@@ -74,7 +83,6 @@ export class AppStore {
   private migrateIfNeeded(): void {
     const version = this.store.get('schemaVersion', 1)
     if (version < CURRENT_SCHEMA_VERSION) {
-      // Phase 1 -> Phase 2 migration: switch default to live mode and clear Phase 1 mock cache
       const current = this.getSettings()
       this.store.set('settings', {
         ...current,
@@ -113,5 +121,46 @@ export class AppStore {
 
   getLastUpdatedAt(): number | null {
     return this.store.get('lastUpdatedAt') ?? null
+  }
+
+  saveImportedChatGptSession(credential: ChatGptCredential): void {
+    const serialized = JSON.stringify(credential)
+    try {
+      if (safeStorage.isEncryptionAvailable()) {
+        const cipher = safeStorage.encryptString(serialized).toString('base64')
+        this.store.set('importedChatGptSession', { encrypted: true, payload: cipher })
+        return
+      }
+    } catch {
+      // Fallback to local unencrypted JSON if OS keychain encryption is unavailable
+    }
+    this.store.set('importedChatGptSession', { encrypted: false, payload: serialized })
+  }
+
+  getImportedChatGptSession(): ChatGptCredential | null {
+    const blob = this.store.get('importedChatGptSession')
+    if (!blob || typeof blob.payload !== 'string') return null
+
+    try {
+      const jsonText = blob.encrypted
+        ? safeStorage.decryptString(Buffer.from(blob.payload, 'base64'))
+        : blob.payload
+      const parsed = JSON.parse(jsonText) as ChatGptCredential
+      if (parsed && typeof parsed.accessToken === 'string' && parsed.accessToken.length >= 20) {
+        return {
+          accessToken: parsed.accessToken,
+          accountId: typeof parsed.accountId === 'string' ? parsed.accountId : null,
+          expiresAt: typeof parsed.expiresAt === 'string' ? parsed.expiresAt : null,
+          source: 'imported_session'
+        }
+      }
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  clearImportedChatGptSession(): void {
+    this.store.set('importedChatGptSession', null)
   }
 }
