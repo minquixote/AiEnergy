@@ -7,6 +7,7 @@ import {
   FLOATING_BAR_DEFAULTS,
   clampFloatingBarPosition,
   getDefaultFloatingBarPosition,
+  isFloatingBarOverlappingTaskbar,
   isFloatingBarVisibleOnWorkAreas
 } from './floatingBarBounds'
 import type { Rect } from './popoverBounds'
@@ -17,8 +18,13 @@ export interface FloatingBarCallbacks {
   onOpenPopover: (anchorBounds: Rect | null) => void
   onRefresh: () => void
   onHideFloatingBar: () => void
+  isPopoverVisible?: () => boolean
   onDiagnostic?: (level: DebugLogLevel, message: string) => void
 }
+
+const TASKBAR_GUARD_INTERVAL_MS = 300
+const DESKTOP_GUARD_INTERVAL_MS = 1500
+const BLUR_REASSERT_DELAYS_MS = [20, 110, 260] as const
 
 function getWorkAreaForPoint(point?: { x: number; y: number } | null): Rect {
   try {
@@ -37,16 +43,18 @@ function resolveInitialPosition(
   height: number
 ): FloatingBarPosition {
   const displays = screen.getAllDisplays()
-  const workAreas = displays.map((d) => d.workArea)
+  // Validate against full display bounds (including taskbar) so users who drag the mini bar
+  // onto the Windows 11 taskbar keep that position across restarts.
+  const fullBoundsList = displays.map((d) => d.bounds)
 
-  if (savedPos && isFloatingBarVisibleOnWorkAreas(savedPos, width, height, workAreas)) {
+  if (savedPos && isFloatingBarVisibleOnWorkAreas(savedPos, width, height, fullBoundsList)) {
     const display = screen.getDisplayMatching({
       x: savedPos.x,
       y: savedPos.y,
       width: Math.max(1, width),
       height: Math.max(1, height)
     })
-    return clampFloatingBarPosition(savedPos, width, height, display.workArea)
+    return clampFloatingBarPosition(savedPos, width, height, display.bounds, 0)
   }
 
   return getDefaultFloatingBarPosition(width, height, screen.getPrimaryDisplay().workArea)
@@ -72,10 +80,15 @@ export class FloatingBarManager {
   private saveTimer: NodeJS.Timeout | null = null
   private revealFallbackTimer: NodeJS.Timeout | null = null
   private programmaticMoveTimer: NodeJS.Timeout | null = null
+  private topmostGuardTimer: NodeJS.Timeout | null = null
+  private topmostGuardIntervalMs = 0
+  private blurReassertTimers: NodeJS.Timeout[] = []
   private isLoaded = false
   private hasRevealed = false
   private shouldBeVisible = false
   private isProgrammaticMove = false
+  private isContextMenuOpen = false
+  private wasOverTaskbar = false
   private readonly handleDisplayChange: () => void
 
   constructor(store: AppStore, callbacks: FloatingBarCallbacks) {
@@ -83,6 +96,7 @@ export class FloatingBarManager {
     this.callbacks = callbacks
     this.handleDisplayChange = () => {
       this.ensureWindowOnScreen()
+      this.syncTopmostGuard()
     }
     screen.on('display-metrics-changed', this.handleDisplayChange)
     screen.on('display-removed', this.handleDisplayChange)
@@ -90,6 +104,13 @@ export class FloatingBarManager {
 
   private logDiagnostic(level: DebugLogLevel, message: string): void {
     this.callbacks.onDiagnostic?.(level, message)
+  }
+
+  private isCurrentlyOverTaskbar(win: BrowserWindow): boolean {
+    if (win.isDestroyed()) return false
+    const bounds = win.getBounds()
+    const display = screen.getDisplayMatching(bounds)
+    return isFloatingBarOverlappingTaskbar(bounds, display.bounds, display.workArea)
   }
 
   private applyAlwaysOnTop(win: BrowserWindow): void {
@@ -106,21 +127,108 @@ export class FloatingBarManager {
     }
   }
 
+  private reassertTopmost(win: BrowserWindow, forceReapplyFlag: boolean = false): void {
+    if (process.platform !== 'win32') return
+    if (win.isDestroyed() || !this.shouldBeVisible) return
+    if (this.isContextMenuOpen || this.callbacks.isPopoverVisible?.()) return
+
+    if (win.isMinimized()) {
+      win.restore()
+      win.showInactive()
+    }
+
+    if (!win.isVisible()) return
+    if (win.isFocused()) return
+
+    if (forceReapplyFlag || !win.isAlwaysOnTop()) {
+      win.setAlwaysOnTop(true, 'screen-saver')
+    }
+    // Win32 SetWindowPos(hwnd, HWND_TOP, SWP_NOACTIVATE): raises our HWND_TOPMOST window back
+    // above Shell_TrayWnd (Windows 11 taskbar) without stealing focus or disrupting input.
+    win.moveTop()
+  }
+
+  private clearBlurReassertTimers(): void {
+    for (const t of this.blurReassertTimers) {
+      clearTimeout(t)
+    }
+    this.blurReassertTimers = []
+  }
+
+  private scheduleBlurReassert(win: BrowserWindow): void {
+    if (process.platform !== 'win32') return
+    this.clearBlurReassertTimers()
+    for (const delayMs of BLUR_REASSERT_DELAYS_MS) {
+      const timer = setTimeout(() => {
+        if (!win.isDestroyed()) {
+          this.reassertTopmost(win, true)
+        }
+      }, delayMs)
+      this.blurReassertTimers.push(timer)
+    }
+  }
+
+  private stopTopmostGuard(): void {
+    if (this.topmostGuardTimer) {
+      clearInterval(this.topmostGuardTimer)
+      this.topmostGuardTimer = null
+    }
+    this.topmostGuardIntervalMs = 0
+    this.clearBlurReassertTimers()
+  }
+
+  private syncTopmostGuard(): void {
+    if (process.platform !== 'win32') return
+    const win = this.window
+    if (!this.shouldBeVisible || !win || win.isDestroyed()) {
+      this.stopTopmostGuard()
+      return
+    }
+
+    const overTaskbar = this.isCurrentlyOverTaskbar(win)
+    if (overTaskbar && !this.wasOverTaskbar) {
+      this.wasOverTaskbar = true
+      this.logDiagnostic(
+        'info',
+        `미니 바 작업표시줄 영역 배치 감지 (${formatBounds(win.getBounds())}) — 최상위 유지 강화 활성`
+      )
+    } else if (!overTaskbar && this.wasOverTaskbar) {
+      this.wasOverTaskbar = false
+    }
+
+    const desiredInterval = overTaskbar ? TASKBAR_GUARD_INTERVAL_MS : DESKTOP_GUARD_INTERVAL_MS
+    if (this.topmostGuardTimer && this.topmostGuardIntervalMs === desiredInterval) {
+      return
+    }
+
+    if (this.topmostGuardTimer) {
+      clearInterval(this.topmostGuardTimer)
+    }
+
+    this.topmostGuardIntervalMs = desiredInterval
+    let tickCount = 0
+    this.topmostGuardTimer = setInterval(() => {
+      const currentWin = this.window
+      if (!currentWin || currentWin.isDestroyed() || !this.shouldBeVisible) {
+        this.stopTopmostGuard()
+        return
+      }
+      tickCount += 1
+      // Re-apply screen-saver flag periodically in case explorer/OS reset topmost flags
+      const forceFlag = overTaskbar && tickCount % 10 === 0
+      this.reassertTopmost(currentWin, forceFlag)
+    }, desiredInterval)
+  }
+
   private applyBoundsProgrammatically(win: BrowserWindow, nextBounds: Rect): void {
     if (win.isDestroyed()) return
     this.isProgrammaticMove = true
     if (this.programmaticMoveTimer) clearTimeout(this.programmaticMoveTimer)
 
     try {
-      const wasResizable = win.isResizable()
-      if (!wasResizable) {
-        win.setResizable(true)
-      }
-      win.setMinimumSize(FLOATING_BAR_DEFAULTS.MIN_WIDTH, FLOATING_BAR_DEFAULTS.MIN_HEIGHT)
+      // Avoid toggling setResizable(true/false) on transparent Windows BrowserWindow,
+      // which can trigger DPI height drift or break layered transparency.
       win.setBounds(nextBounds, false)
-      if (!wasResizable) {
-        win.setResizable(false)
-      }
     } finally {
       this.programmaticMoveTimer = setTimeout(() => {
         this.isProgrammaticMove = false
@@ -134,8 +242,10 @@ export class FloatingBarManager {
     if (!win || win.isDestroyed()) return
     const cur = win.getBounds()
     const displays = screen.getAllDisplays()
-    const workAreas = displays.map((d) => d.workArea)
-    if (isFloatingBarVisibleOnWorkAreas({ x: cur.x, y: cur.y }, cur.width, cur.height, workAreas)) {
+    const fullBoundsList = displays.map((d) => d.bounds)
+    if (
+      isFloatingBarVisibleOnWorkAreas({ x: cur.x, y: cur.y }, cur.width, cur.height, fullBoundsList)
+    ) {
       return
     }
     const rescued = getDefaultFloatingBarPosition(
@@ -168,6 +278,7 @@ export class FloatingBarManager {
       win.moveTop()
     }
     this.hasRevealed = true
+    this.syncTopmostGuard()
 
     const actual = win.getBounds()
     const display = screen.getDisplayMatching(actual)
@@ -235,11 +346,27 @@ export class FloatingBarManager {
         if (win.isDestroyed() || !win.isVisible() || this.isProgrammaticMove) return
         const b = win.getBounds()
         this.store.setFloatingBarPosition({ x: b.x, y: b.y })
+        this.syncTopmostGuard()
       }, 220)
+    })
+
+    win.on('blur', () => {
+      if (win.isDestroyed() || !this.shouldBeVisible) return
+      this.scheduleBlurReassert(win)
+    })
+
+    win.on('minimize', () => {
+      if (process.platform !== 'win32' || win.isDestroyed() || !this.shouldBeVisible) return
+      setTimeout(() => {
+        if (!win.isDestroyed() && this.shouldBeVisible) {
+          this.reassertTopmost(win, true)
+        }
+      }, 50)
     })
 
     win.on('closed', () => {
       if (this.window === win) {
+        this.stopTopmostGuard()
         this.window = null
         this.isLoaded = false
         this.hasRevealed = false
@@ -305,6 +432,7 @@ export class FloatingBarManager {
     this.shouldBeVisible = visible
 
     if (!visible) {
+      this.stopTopmostGuard()
       if (this.window && !this.window.isDestroyed() && this.window.isVisible()) {
         this.window.hide()
         this.hasRevealed = false
@@ -318,6 +446,13 @@ export class FloatingBarManager {
       if (!win.isVisible() || becameVisible) {
         this.revealWindow(win, becameVisible ? 'toggle-on' : 'sync')
       }
+    }
+  }
+
+  notifyPopoverClosed(): void {
+    const win = this.window
+    if (win && !win.isDestroyed() && this.shouldBeVisible) {
+      this.scheduleBlurReassert(win)
     }
   }
 
@@ -337,12 +472,12 @@ export class FloatingBarManager {
 
     const prevBounds = win.getBounds()
     const display = screen.getDisplayMatching(prevBounds)
-    const wa = display.workArea
+    const area = display.bounds
 
     // If the floating bar sits on the right half of the display, keep its right edge pinned smoothly
-    const isRightHalf = prevBounds.x + prevBounds.width / 2 > wa.x + wa.width / 2
+    const isRightHalf = prevBounds.x + prevBounds.width / 2 > area.x + area.width / 2
     const nextX = isRightHalf ? prevBounds.x + (prevBounds.width - nextW) : prevBounds.x
-    const clamped = clampFloatingBarPosition({ x: nextX, y: prevBounds.y }, nextW, nextH, wa)
+    const clamped = clampFloatingBarPosition({ x: nextX, y: prevBounds.y }, nextW, nextH, area, 0)
 
     this.currentWidth = nextW
     this.currentHeight = nextH
@@ -413,7 +548,16 @@ export class FloatingBarManager {
       }
     ])
 
-    menu.popup({ window: win })
+    this.isContextMenuOpen = true
+    menu.popup({
+      window: win,
+      callback: () => {
+        this.isContextMenuOpen = false
+        if (!win.isDestroyed() && this.shouldBeVisible) {
+          this.scheduleBlurReassert(win)
+        }
+      }
+    })
   }
 
   triggerTogglePopover(): void {
@@ -423,6 +567,7 @@ export class FloatingBarManager {
   destroy(): void {
     screen.removeListener('display-metrics-changed', this.handleDisplayChange)
     screen.removeListener('display-removed', this.handleDisplayChange)
+    this.stopTopmostGuard()
     if (this.saveTimer) {
       clearTimeout(this.saveTimer)
       this.saveTimer = null

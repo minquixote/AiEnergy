@@ -63,7 +63,9 @@ if (!gotLock) {
     registerAppCspHeaders()
 
     const store = new AppStore()
-    popover = new PopoverManager()
+    popover = new PopoverManager({
+      onHide: () => floatingBar?.notifyPopoverClosed()
+    })
     coordinator = new EnergyCoordinator(store, {
       onNotificationClick: () => popover?.show()
     })
@@ -77,6 +79,7 @@ if (!gotLock) {
       onHideFloatingBar: () => {
         coordinator?.updateSettings({ showFloatingBar: false })
       },
+      isPopoverVisible: () => Boolean(popover?.getWindow()?.isVisible()),
       onDiagnostic: (level, message) => {
         coordinator?.recordSystemLog(level, message)
       }

@@ -11,6 +11,11 @@ export class PopoverManager {
   private currentHeight: number = POPOVER_DIMENSIONS.INITIAL_HEIGHT
   private tray: Tray | null = null
   private lastAnchorBounds: Rect | null = null
+  private readonly onHide?: () => void
+
+  constructor(options?: { onHide?: () => void }) {
+    this.onHide = options?.onHide
+  }
 
   attachTray(tray: Tray): void {
     this.tray = tray
@@ -120,6 +125,7 @@ export class PopoverManager {
     if (!win || !win.isVisible()) return
     this.lastHiddenAt = Date.now()
     win.hide()
+    this.onHide?.()
   }
 
   resize(requestedHeight: number): void {
