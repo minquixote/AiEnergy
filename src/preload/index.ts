@@ -2,7 +2,13 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS, type AiEnergyApi } from '../shared/ipc'
 import type { AppSettings, AppSnapshot, MockScenarioId, ProviderId } from '../shared/types'
 
+const windowMode =
+  Array.isArray(process.argv) && process.argv.includes('--ai-energy-window=floating-bar')
+    ? 'floating-bar'
+    : 'popover'
+
 const api: AiEnergyApi = {
+  windowMode,
   getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.GET_SNAPSHOT),
   refreshNow: () => ipcRenderer.invoke(IPC_CHANNELS.REFRESH_NOW),
   updateSettings: (patch: Partial<AppSettings>) =>
@@ -25,6 +31,7 @@ const api: AiEnergyApi = {
   openFloatingBarMenu: () => ipcRenderer.invoke(IPC_CHANNELS.OPEN_FLOATING_BAR_MENU),
   resizeFloatingBar: (width: number, height: number) =>
     ipcRenderer.invoke(IPC_CHANNELS.RESIZE_FLOATING_BAR, width, height),
+  resetFloatingBarPosition: () => ipcRenderer.invoke(IPC_CHANNELS.RESET_FLOATING_BAR_POSITION),
   resizePopover: (height: number) => ipcRenderer.invoke(IPC_CHANNELS.RESIZE_POPOVER, height),
   quitApp: () => ipcRenderer.invoke(IPC_CHANNELS.QUIT_APP),
   onSnapshotUpdated: (listener: (snapshot: AppSnapshot) => void) => {

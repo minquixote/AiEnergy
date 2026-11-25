@@ -34,6 +34,7 @@ export function App() {
     getDebugLogs,
     clearDebugLogs,
     copyDebugLogs,
+    resetFloatingBarPosition,
     quitApp
   } = useEnergyApp()
 
@@ -168,6 +169,7 @@ export function App() {
           onDetectCodexCli={() => void refreshNow()}
           onDisconnect={(providerId) => void disconnectProvider(providerId)}
           onOpenDebugLogs={() => setView('debug')}
+          onResetFloatingBarPosition={() => void resetFloatingBarPosition()}
           onConnectSuccess={() => {
             setExpandedProvider(null)
             setView('main')

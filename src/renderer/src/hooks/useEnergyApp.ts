@@ -24,6 +24,7 @@ export interface UseEnergyAppState {
   getDebugLogs: () => Promise<DebugLogEntry[]>
   clearDebugLogs: () => Promise<DebugLogEntry[]>
   copyDebugLogs: () => Promise<boolean>
+  resetFloatingBarPosition: () => Promise<void>
   quitApp: () => Promise<void>
 }
 
@@ -122,7 +123,7 @@ export function useEnergyApp(): UseEnergyAppState {
         providerId === 'chatgpt'
           ? '열린 세션 페이지 전체를 복사해 붙여넣어 주세요.'
           : providerId === 'gemini'
-            ? `개발자 도구(${devToolsKey}) Network에서 executeQuery → Copy as cURL을 복사해 붙여넣어 주세요.`
+            ? `개발자 도구(${devToolsKey}) Network → Doc 필터에서 usage 우클릭 → Copy as cURL을 복사해 붙여넣어 주세요.`
             : '개발자 도구에서 sessionKey 또는 Copy as cURL을 복사해 붙여넣어 주세요.'
       showToast(hint)
     },
@@ -156,6 +157,11 @@ export function useEnergyApp(): UseEnergyAppState {
     return ok
   }, [showToast])
 
+  const resetFloatingBarPosition = useCallback(async () => {
+    await getEnergyBridge().resetFloatingBarPosition()
+    showToast('미니 바를 현재 화면 오른쪽 아래로 재배치했습니다.')
+  }, [showToast])
+
   const quitApp = useCallback(async () => {
     await getEnergyBridge().quitApp()
   }, [])
@@ -174,6 +180,7 @@ export function useEnergyApp(): UseEnergyAppState {
     getDebugLogs,
     clearDebugLogs,
     copyDebugLogs,
+    resetFloatingBarPosition,
     quitApp
   }
 }

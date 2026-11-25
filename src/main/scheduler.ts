@@ -174,6 +174,14 @@ export class EnergyCoordinator {
     return cleared
   }
 
+  recordSystemLog(level: 'info' | 'warn' | 'error', message: string): void {
+    this.recordLog({
+      providerId: 'system',
+      level,
+      message
+    })
+  }
+
   formatDiagnosticsReport(): string {
     const snapshot = this.getSnapshot()
     return formatDebugLogsReport(this.store.getDebugLogs(), {

@@ -24,12 +24,16 @@ export const IPC_CHANNELS = {
   TOGGLE_POPOVER_FROM_FLOATING_BAR: 'ai-energy:toggle-popover-from-floating-bar',
   OPEN_FLOATING_BAR_MENU: 'ai-energy:open-floating-bar-menu',
   RESIZE_FLOATING_BAR: 'ai-energy:resize-floating-bar',
+  RESET_FLOATING_BAR_POSITION: 'ai-energy:reset-floating-bar-position',
   RESIZE_POPOVER: 'ai-energy:resize-popover',
   QUIT_APP: 'ai-energy:quit-app',
   SNAPSHOT_UPDATED: 'ai-energy:snapshot-updated'
 } as const
 
+export type RendererWindowMode = 'popover' | 'floating-bar'
+
 export interface AiEnergyApi {
+  windowMode: RendererWindowMode
   getSnapshot: () => Promise<AppSnapshot>
   refreshNow: () => Promise<RefreshResult>
   updateSettings: (patch: Partial<AppSettings>) => Promise<AppSnapshot>
@@ -44,6 +48,7 @@ export interface AiEnergyApi {
   togglePopoverFromFloatingBar: () => Promise<void>
   openFloatingBarMenu: () => Promise<void>
   resizeFloatingBar: (width: number, height: number) => Promise<void>
+  resetFloatingBarPosition: () => Promise<void>
   resizePopover: (height: number) => Promise<void>
   quitApp: () => Promise<void>
   onSnapshotUpdated: (listener: (snapshot: AppSnapshot) => void) => () => void

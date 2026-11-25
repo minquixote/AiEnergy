@@ -84,6 +84,14 @@ body,
   overflow: hidden;
 }
 
+html.floating-bar-mode,
+html.floating-bar-mode body,
+html.floating-bar-mode #root {
+  width: fit-content;
+  height: fit-content;
+  white-space: nowrap;
+}
+
 input,
 textarea {
   user-select: text;

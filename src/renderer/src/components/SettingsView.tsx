@@ -49,6 +49,7 @@ interface SettingsViewProps {
   onDetectCodexCli: () => void
   onDisconnect: (providerId: ProviderId) => void
   onOpenDebugLogs: () => void
+  onResetFloatingBarPosition: () => void
   onConnectSuccess: () => void
 }
 
@@ -136,6 +137,7 @@ export function SettingsView({
   onDetectCodexCli,
   onDisconnect,
   onOpenDebugLogs,
+  onResetFloatingBarPosition,
   onConnectSuccess
 }: SettingsViewProps) {
   const [expandedProvider, setExpandedProvider] = useState<ProviderId | null>(
@@ -532,17 +534,17 @@ export function SettingsView({
                           <code className="font-mono">
                             {platform === 'darwin' ? '⌥⌘I' : 'F12'}
                           </code>
-                          ) → <strong>Network</strong> 탭 → 새로고침(
+                          ) → <strong>Network</strong> 탭 → <strong>Doc</strong> 필터 → 새로고침(
                           <code className="font-mono">
                             {platform === 'darwin' ? '⌘R' : 'F5'}
                           </code>
-                          ) 후 <code className="font-mono">executeQuery</code> 우클릭 →{' '}
+                          ) 후 <code className="font-mono">usage</code>(또는{' '}
+                          <code className="font-mono">executeQuery</code>) 우클릭 →{' '}
                           <strong>
                             {platform === 'darwin'
                               ? 'Copy → Copy as cURL'
                               : 'Copy → Copy as cURL (cmd / bash)'}
-                          </strong>{' '}
-                          (또는 Cookie 헤더 복사)
+                          </strong>
                         </p>
 
                         <textarea
@@ -756,18 +758,36 @@ export function SettingsView({
         >
           {platform !== 'darwin' && (
             <div className="flex items-center justify-between gap-2">
-              <div>
+              <div className="min-w-0">
                 <div className="text-[12px] font-medium">항상 위 미니 바 표시</div>
                 <div className="text-[10.5px]" style={{ color: 'var(--text-muted)' }}>
                   화면 구석에 드래그 가능한 [아이콘][배터리%] 상시 표시
                 </div>
               </div>
-              <ToggleSwitch
-                id="toggle-floating-bar"
-                checked={settings.showFloatingBar}
-                label="항상 위 미니 바 표시"
-                onChange={(next) => onUpdateSettings({ showFloatingBar: next })}
-              />
+              <div className="flex items-center gap-1.5 shrink-0">
+                {settings.showFloatingBar && (
+                  <button
+                    id="btn-reset-floating-bar"
+                    type="button"
+                    onClick={onResetFloatingBarPosition}
+                    className="rounded-md px-2 py-1 text-[10px] font-medium transition-colors cursor-pointer"
+                    style={{
+                      backgroundColor: 'var(--surface-subtle)',
+                      color: 'var(--text-secondary)',
+                      border: '1px solid var(--border-hairline)'
+                    }}
+                    title="미니 바를 현재 모니터 오른쪽 아래로 재배치하고 맨 앞으로 가져옵니다"
+                  >
+                    위치 초기화
+                  </button>
+                )}
+                <ToggleSwitch
+                  id="toggle-floating-bar"
+                  checked={settings.showFloatingBar}
+                  label="항상 위 미니 바 표시"
+                  onChange={(next) => onUpdateSettings({ showFloatingBar: next })}
+                />
+              </div>
             </div>
           )}
 

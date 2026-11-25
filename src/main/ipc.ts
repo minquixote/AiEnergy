@@ -91,6 +91,13 @@ export function registerIpcHandlers(
     }
   })
 
+  ipcMain.handle(IPC_CHANNELS.RESET_FLOATING_BAR_POSITION, () => {
+    if (!coordinator.getSnapshot().settings.showFloatingBar) {
+      coordinator.updateSettings({ showFloatingBar: true })
+    }
+    floatingBar?.resetPosition()
+  })
+
   ipcMain.handle(IPC_CHANNELS.RESIZE_POPOVER, (_event, height: number) => {
     if (typeof height === 'number' && Number.isFinite(height)) {
       popover.resize(height)

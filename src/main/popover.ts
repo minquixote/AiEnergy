@@ -54,7 +54,7 @@ export class PopoverManager {
       win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
       win.setAlwaysOnTop(true, 'pop-up-menu')
     } else if (process.platform === 'win32') {
-      win.setAlwaysOnTop(true, 'pop-up-menu')
+      win.setAlwaysOnTop(true, 'screen-saver')
     }
 
     win.on('blur', () => {
@@ -65,27 +65,6 @@ export class PopoverManager {
 
     win.on('closed', () => {
       this.window = null
-    })
-
-    win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-      const isAppResource =
-        details.url.startsWith('file://') ||
-        details.url.startsWith('http://localhost:') ||
-        details.url.startsWith('http://127.0.0.1:')
-      if (!isAppResource) {
-        callback({ responseHeaders: details.responseHeaders })
-        return
-      }
-      const csp = app.isPackaged
-        ? "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
-        : "default-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; script-src 'self' 'unsafe-inline' http://localhost:* http://127.0.0.1:*; style-src 'self' 'unsafe-inline' http://localhost:* http://127.0.0.1:*; img-src 'self' data: http://localhost:* http://127.0.0.1:*"
-
-      callback({
-        responseHeaders: {
-          ...details.responseHeaders,
-          'Content-Security-Policy': [csp]
-        }
-      })
     })
 
     if (!app.isPackaged) {
@@ -127,7 +106,7 @@ export class PopoverManager {
     this.lastAnchorBounds = anchorBounds ?? null
     this.reposition(win)
     if (process.platform === 'win32') {
-      win.setAlwaysOnTop(true, 'pop-up-menu')
+      win.setAlwaysOnTop(true, 'screen-saver')
     }
     win.show()
     if (process.platform === 'win32') {

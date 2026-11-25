@@ -181,6 +181,12 @@ function createBrowserFallbackBridge(): AiEnergyApi {
   }
 
   return {
+    windowMode:
+      typeof window !== 'undefined' &&
+      (window.location.hash === '#floating-bar' ||
+        new URLSearchParams(window.location.search).get('mode') === 'floating-bar')
+        ? 'floating-bar'
+        : 'popover',
     getSnapshot: async () => snapshot(),
     refreshNow: async () => {
       const now = Date.now()
@@ -290,6 +296,7 @@ function createBrowserFallbackBridge(): AiEnergyApi {
     togglePopoverFromFloatingBar: async () => undefined,
     openFloatingBarMenu: async () => undefined,
     resizeFloatingBar: async () => undefined,
+    resetFloatingBarPosition: async () => undefined,
     resizePopover: async () => undefined,
     quitApp: async () => undefined,
     onSnapshotUpdated: (listener) => {

@@ -6,9 +6,9 @@ import { ProviderIcon } from './components/ProviderIcon'
 import { getEnergyBridge } from './lib/bridge'
 
 const FILL_GRADIENT: Record<EnergyLevel, string> = {
-  high: 'linear-gradient(180deg, rgba(34, 197, 94, 0.72), rgba(21, 160, 72, 0.62))',
-  medium: 'linear-gradient(180deg, rgba(245, 158, 11, 0.74), rgba(217, 119, 6, 0.64))',
-  low: 'linear-gradient(180deg, rgba(239, 68, 68, 0.78), rgba(220, 38, 38, 0.68))',
+  high: 'linear-gradient(180deg, rgba(34, 197, 94, 0.78), rgba(21, 160, 72, 0.68))',
+  medium: 'linear-gradient(180deg, rgba(245, 158, 11, 0.80), rgba(217, 119, 6, 0.70))',
+  low: 'linear-gradient(180deg, rgba(239, 68, 68, 0.84), rgba(220, 38, 38, 0.74))',
   unknown: 'linear-gradient(180deg, rgba(148, 163, 184, 0.45), rgba(100, 116, 139, 0.38))'
 }
 
@@ -39,16 +39,16 @@ function FloatingBattery({
       ? 'rgba(255, 255, 255, 0.56)'
       : 'rgba(24, 26, 31, 0.55)'
     : isDark
-      ? 'rgba(255, 255, 255, 0.84)'
-      : 'rgba(24, 26, 31, 0.82)'
+      ? 'rgba(255, 255, 255, 0.86)'
+      : 'rgba(24, 26, 31, 0.84)'
 
   const trackBg = isUnavailable
     ? isDark
-      ? 'rgba(12, 16, 24, 0.44)'
-      : 'rgba(22, 27, 36, 0.50)'
+      ? 'rgba(12, 16, 24, 0.48)'
+      : 'rgba(22, 27, 36, 0.54)'
     : isDark
-      ? 'rgba(12, 16, 24, 0.62)'
-      : 'rgba(18, 23, 32, 0.68)'
+      ? 'rgba(12, 16, 24, 0.66)'
+      : 'rgba(18, 23, 32, 0.72)'
 
   const batteryW = showPercentage ? 41 : 22
   const batteryH = showPercentage ? 16 : 13
@@ -80,7 +80,7 @@ function FloatingBattery({
             className="relative z-10 font-bold leading-none tracking-[-0.02em] tabular-nums"
             style={{
               fontSize: label === 'N/A' ? '9.25px' : label.length >= 4 ? '9.75px' : '10.5px',
-              color: isUnavailable ? 'rgba(255, 255, 255, 0.84)' : '#ffffff',
+              color: isUnavailable ? 'rgba(255, 255, 255, 0.86)' : '#ffffff',
               textShadow: '0 0.5px 1.5px rgba(0, 0, 0, 0.58)'
             }}
           >
@@ -103,7 +103,7 @@ function FloatingBattery({
 
 export function FloatingBarApp() {
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null)
-  const pillRef = useRef<HTMLDivElement | null>(null)
+  const wrapperRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const bridge = getEnergyBridge()
@@ -124,8 +124,8 @@ export function FloatingBarApp() {
   }, [])
 
   useEffect(() => {
-    const el = pillRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
+    const el = wrapperRef.current
+    if (!snapshot || !el || typeof ResizeObserver === 'undefined') return
 
     const syncSize = (): void => {
       const rect = el.getBoundingClientRect()
@@ -140,75 +140,90 @@ export function FloatingBarApp() {
     return () => observer.disconnect()
   }, [snapshot])
 
-  if (!snapshot) return null
-
-  const pref = snapshot.settings.theme
-  const resolvedTheme = pref === 'system' ? snapshot.systemTheme : pref
+  const pref = snapshot?.settings.theme ?? 'dark'
+  const resolvedTheme =
+    pref === 'system' ? (snapshot?.systemTheme ?? 'dark') : pref
   const isDark = resolvedTheme === 'dark'
-  const items = snapshot.traySummary.items
-  const showPercentage = snapshot.settings.showTrayPercentage
+  const items = snapshot?.traySummary.items ?? []
+  const showPercentage = snapshot?.settings.showTrayPercentage ?? true
 
   return (
-    <div
-      ref={pillRef}
-      onContextMenu={(e) => {
-        e.preventDefault()
-        void getEnergyBridge().openFloatingBarMenu()
-      }}
-      className="inline-flex h-[32px] items-center gap-1.5 rounded-[10px] pl-1.5 pr-2.5 select-none"
-      style={{
-        backgroundColor: isDark ? 'rgba(18, 22, 30, 0.86)' : 'rgba(246, 247, 250, 0.92)',
-        border: isDark ? '1px solid rgba(255, 255, 255, 0.16)' : '1px solid rgba(15, 23, 42, 0.15)',
-        color: isDark ? 'rgba(255, 255, 255, 0.96)' : 'rgba(20, 22, 26, 0.92)',
-        backdropFilter: 'blur(12px)'
-      }}
-    >
-      {/* Drag grip handle */}
-      <span
+    <div ref={wrapperRef} className="inline-flex p-[1px]">
+      <div
+        onContextMenu={(e) => {
+          e.preventDefault()
+          void getEnergyBridge().openFloatingBarMenu()
+        }}
+        className="inline-flex h-[34px] items-center gap-1.5 rounded-[10px] pl-1.5 pr-2.5 select-none whitespace-nowrap"
         style={{
           ...DRAG_STYLE,
-          color: isDark ? 'rgba(255, 255, 255, 0.36)' : 'rgba(20, 22, 26, 0.34)'
+          backgroundColor: isDark ? 'rgba(20, 23, 30, 0.94)' : 'rgba(248, 249, 252, 0.96)',
+          border: isDark
+            ? '1px solid rgba(255, 255, 255, 0.18)'
+            : '1px solid rgba(15, 23, 42, 0.16)',
+          color: isDark ? 'rgba(255, 255, 255, 0.96)' : 'rgba(20, 22, 26, 0.92)'
         }}
-        className="inline-flex h-full cursor-grab items-center pr-0.5 active:cursor-grabbing"
-        title="드래그하여 미니 바 위치 이동"
       >
-        <GripVertical className="h-3.5 w-3.5" />
-      </span>
+        {/* Drag grip handle */}
+        <span
+          style={{
+            ...DRAG_STYLE,
+            color: isDark ? 'rgba(255, 255, 255, 0.42)' : 'rgba(20, 22, 26, 0.38)'
+          }}
+          className="inline-flex h-full cursor-grab items-center pr-0.5 active:cursor-grabbing"
+          title="드래그하여 미니 바 위치 이동"
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </span>
 
-      {/* Clickable provider strip */}
-      <button
-        id="btn-floating-bar-toggle"
-        type="button"
-        style={NO_DRAG_STYLE}
-        onClick={() => void getEnergyBridge().togglePopoverFromFloatingBar()}
-        className="inline-flex items-center gap-2 bg-transparent p-0 cursor-pointer"
-        title="클릭하여 AI Energy Bar 열기 (우클릭으로 메뉴)"
-      >
-        {items.map((item) => {
-          const isUnavailable =
-            item.badgeKind === 'unavailable' ||
-            (item.badgeKind === undefined && item.status === 'ok' && item.remainingPct === null)
-          return (
-            <span
-              key={item.id}
-              className="inline-flex items-center gap-1"
-              aria-label={PROVIDER_META[item.id].name}
-            >
-              <span
-                className="inline-flex items-center justify-center"
-                style={{ opacity: isUnavailable ? 0.72 : 1 }}
-              >
-                <ProviderIcon id={item.id} className="h-[14px] w-[14px]" />
-              </span>
-              <FloatingBattery
-                item={item}
-                showPercentage={showPercentage}
-                isDark={isDark}
-              />
-            </span>
-          )
-        })}
-      </button>
+        {/* Clickable provider strip */}
+        {items.length > 0 ? (
+          <button
+            id="btn-floating-bar-toggle"
+            type="button"
+            style={NO_DRAG_STYLE}
+            onClick={() => void getEnergyBridge().togglePopoverFromFloatingBar()}
+            className="inline-flex items-center gap-2 bg-transparent p-0 cursor-pointer"
+            title="클릭하여 AI Energy Bar 열기 (우클릭으로 메뉴)"
+          >
+            {items.map((item) => {
+              const isUnavailable =
+                item.badgeKind === 'unavailable' ||
+                (item.badgeKind === undefined && item.status === 'ok' && item.remainingPct === null)
+              return (
+                <span
+                  key={item.id}
+                  className="inline-flex items-center gap-1"
+                  aria-label={PROVIDER_META[item.id].name}
+                >
+                  <span
+                    className="inline-flex items-center justify-center"
+                    style={{ opacity: isUnavailable ? 0.72 : 1 }}
+                  >
+                    <ProviderIcon id={item.id} className="h-[14px] w-[14px]" />
+                  </span>
+                  <FloatingBattery
+                    item={item}
+                    showPercentage={showPercentage}
+                    isDark={isDark}
+                  />
+                </span>
+              )
+            })}
+          </button>
+        ) : (
+          <button
+            id="btn-floating-bar-toggle"
+            type="button"
+            style={NO_DRAG_STYLE}
+            onClick={() => void getEnergyBridge().togglePopoverFromFloatingBar()}
+            className="inline-flex items-center gap-1.5 bg-transparent px-1 text-[11px] font-semibold cursor-pointer"
+            title="클릭하여 AI Energy Bar 열기"
+          >
+            <span>AI Energy</span>
+          </button>
+        )}
+      </div>
     </div>
   )
 }

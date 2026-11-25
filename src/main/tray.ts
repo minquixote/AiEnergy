@@ -13,6 +13,7 @@ export interface TrayCallbacks {
   onOpenPopover: () => void
   onRefresh: () => void
   onToggleFloatingBar?: (next: boolean) => void
+  onResetFloatingBarPosition?: () => void
 }
 
 const PROVIDER_NAMES: Record<ProviderId, string> = {
@@ -129,6 +130,13 @@ export class TrayManager {
           click: () => toggleFn(!this.showFloatingBar)
         }
       )
+      if (this.callbacks.onResetFloatingBarPosition) {
+        const resetFn = this.callbacks.onResetFloatingBarPosition
+        template.push({
+          label: '미니 바 위치 초기화',
+          click: () => resetFn()
+        })
+      }
     }
 
     template.push(

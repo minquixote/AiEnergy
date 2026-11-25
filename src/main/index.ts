@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { app, session } from 'electron'
 import { IPC_CHANNELS } from '../shared/ipc'
 import { FloatingBarManager } from './floatingBar'
 import { registerIpcHandlers } from './ipc'
@@ -10,6 +10,30 @@ import { TrayManager } from './tray'
 if (process.platform === 'win32') {
   // Matches electron-builder appId so Windows 10/11 toast notifications show "AI Energy Bar" cleanly
   app.setAppUserModelId('com.aienergybar.app')
+}
+
+function registerAppCspHeaders(): void {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const isAppResource =
+      details.url.startsWith('file://') ||
+      details.url.startsWith('http://localhost:') ||
+      details.url.startsWith('http://127.0.0.1:')
+    if (!isAppResource) {
+      callback({ responseHeaders: details.responseHeaders })
+      return
+    }
+
+    const csp = app.isPackaged
+      ? "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+      : "default-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; script-src 'self' 'unsafe-inline' http://localhost:* http://127.0.0.1:*; style-src 'self' 'unsafe-inline' http://localhost:* http://127.0.0.1:*; img-src 'self' data: http://localhost:* http://127.0.0.1:*"
+
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [csp]
+      }
+    })
+  })
 }
 
 const gotLock = app.requestSingleInstanceLock()
@@ -36,6 +60,8 @@ if (!gotLock) {
       app.dock?.hide()
     }
 
+    registerAppCspHeaders()
+
     const store = new AppStore()
     popover = new PopoverManager()
     coordinator = new EnergyCoordinator(store, {
@@ -50,6 +76,9 @@ if (!gotLock) {
       },
       onHideFloatingBar: () => {
         coordinator?.updateSettings({ showFloatingBar: false })
+      },
+      onDiagnostic: (level, message) => {
+        coordinator?.recordSystemLog(level, message)
       }
     })
 
@@ -61,6 +90,12 @@ if (!gotLock) {
       },
       onToggleFloatingBar: (next) => {
         coordinator?.updateSettings({ showFloatingBar: next })
+      },
+      onResetFloatingBarPosition: () => {
+        if (!coordinator?.getSnapshot().settings.showFloatingBar) {
+          coordinator?.updateSettings({ showFloatingBar: true })
+        }
+        floatingBar?.resetPosition()
       }
     })
 
