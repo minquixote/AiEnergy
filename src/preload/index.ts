@@ -20,6 +20,11 @@ const api: AiEnergyApi = {
   getDebugLogs: () => ipcRenderer.invoke(IPC_CHANNELS.GET_DEBUG_LOGS),
   clearDebugLogs: () => ipcRenderer.invoke(IPC_CHANNELS.CLEAR_DEBUG_LOGS),
   copyDebugLogs: () => ipcRenderer.invoke(IPC_CHANNELS.COPY_DEBUG_LOGS),
+  togglePopoverFromFloatingBar: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.TOGGLE_POPOVER_FROM_FLOATING_BAR),
+  openFloatingBarMenu: () => ipcRenderer.invoke(IPC_CHANNELS.OPEN_FLOATING_BAR_MENU),
+  resizeFloatingBar: (width: number, height: number) =>
+    ipcRenderer.invoke(IPC_CHANNELS.RESIZE_FLOATING_BAR, width, height),
   resizePopover: (height: number) => ipcRenderer.invoke(IPC_CHANNELS.RESIZE_POPOVER, height),
   quitApp: () => ipcRenderer.invoke(IPC_CHANNELS.QUIT_APP),
   onSnapshotUpdated: (listener: (snapshot: AppSnapshot) => void) => {

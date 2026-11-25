@@ -287,6 +287,9 @@ function createBrowserFallbackBridge(): AiEnergyApi {
     getDebugLogs: async () => [],
     clearDebugLogs: async () => [],
     copyDebugLogs: async () => true,
+    togglePopoverFromFloatingBar: async () => undefined,
+    openFloatingBarMenu: async () => undefined,
+    resizeFloatingBar: async () => undefined,
     resizePopover: async () => undefined,
     quitApp: async () => undefined,
     onSnapshotUpdated: (listener) => {

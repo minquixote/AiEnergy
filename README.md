@@ -41,7 +41,13 @@ npm run dist:mac
 npm run dist:win
 ```
 
+### GitHub Actions로 원클릭 빌드 (맥에서도 Windows `.exe` 생성 가능)
+- GitHub 저장소 상단 **Actions → Build Installers (Windows & macOS) → Run workflow**를 클릭하면 `windows-latest` / `macos-latest` 러너에서 Windows `.exe`(설치형 + 무설치 포터블)와 macOS `.dmg`가 자동 빌드되어 **Artifacts**에서 바로 다운로드할 수 있습니다.
+- Windows 10/11에서는 16×16 정사각 트레이 아이콘과 함께 화면 구석에 드래그 가능한 **항상 위 미니 바**를 제공하며, Chrome/Edge 개발자 도구의 `Copy as cURL (cmd / bash)` 및 `Copy as PowerShell`을 모두 지원합니다.
+
 > **macOS 개인용(미서명) 빌드 설치 안내**: `electron-builder.yml`은 Apple 유료 개발자 인증서 없이 로컬 빌드할 수 있도록 `identity: null`로 설정되어 있습니다. 생성된 `release/*.dmg`에서 `AI Energy Bar.app`을 `응용 프로그램(Applications)` 폴더로 드래그한 뒤 실행할 때 보안 경고가 뜨면 **앱 우클릭 → 열기** 또는 터미널에서 `xattr -cr "/Applications/AI Energy Bar.app"`을 1회 실행해 주세요.
+>
+> **Windows 개인용(미서명) 빌드 설치 안내**: Windows SmartScreen에서 *"Windows의 PC 보호"* 창이 뜰 경우 **추가 정보 → 실행**을 클릭해 실행할 수 있습니다.
 
 ## 주요 스크립트
 

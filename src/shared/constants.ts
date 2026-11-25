@@ -61,6 +61,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   notificationsEnabled: true,
   showTrayPercentage: true,
+  showFloatingBar: false,
   launchAtLogin: false,
   dataSourceMode: 'live',
   mockScenario: 'balanced',

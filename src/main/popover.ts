@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { BrowserWindow, app, screen, type Tray } from 'electron'
 import { POPOVER_DIMENSIONS } from '../shared/constants'
-import { computePopoverBounds } from './popoverBounds'
+import { computePopoverBounds, type Rect } from './popoverBounds'
 
 const BLUR_TOGGLE_DEBOUNCE_MS = 220
 
@@ -10,6 +10,7 @@ export class PopoverManager {
   private lastHiddenAt = 0
   private currentHeight: number = POPOVER_DIMENSIONS.INITIAL_HEIGHT
   private tray: Tray | null = null
+  private lastAnchorBounds: Rect | null = null
 
   attachTray(tray: Tray): void {
     this.tray = tray
@@ -25,6 +26,8 @@ export class PopoverManager {
 
     const win = new BrowserWindow({
       width: POPOVER_DIMENSIONS.WIDTH,
+      minWidth: POPOVER_DIMENSIONS.WIDTH,
+      maxWidth: POPOVER_DIMENSIONS.WIDTH,
       height: this.currentHeight,
       show: false,
       frame: false,
@@ -49,6 +52,8 @@ export class PopoverManager {
 
     if (process.platform === 'darwin') {
       win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+      win.setAlwaysOnTop(true, 'pop-up-menu')
+    } else if (process.platform === 'win32') {
       win.setAlwaysOnTop(true, 'pop-up-menu')
     }
 
@@ -104,23 +109,30 @@ export class PopoverManager {
     return this.window && !this.window.isDestroyed() ? this.window : null
   }
 
-  toggle(): void {
+  toggle(anchorBounds?: Rect | null): void {
     const win = this.getWindow() ?? this.createWindow()
     if (win.isVisible()) {
       this.hide()
       return
     }
-    // Avoid immediate reopen when macOS/Windows fires blur right before tray click
+    // Avoid immediate reopen when macOS/Windows fires blur right before tray/bar click
     if (Date.now() - this.lastHiddenAt < BLUR_TOGGLE_DEBOUNCE_MS) {
       return
     }
-    this.show()
+    this.show(anchorBounds)
   }
 
-  show(): void {
+  show(anchorBounds?: Rect | null): void {
     const win = this.getWindow() ?? this.createWindow()
+    this.lastAnchorBounds = anchorBounds ?? null
     this.reposition(win)
+    if (process.platform === 'win32') {
+      win.setAlwaysOnTop(true, 'pop-up-menu')
+    }
     win.show()
+    if (process.platform === 'win32') {
+      win.moveTop()
+    }
     win.focus()
   }
 
@@ -145,17 +157,17 @@ export class PopoverManager {
   }
 
   private reposition(win: BrowserWindow): void {
-    const trayBounds = this.tray
-      ? this.tray.getBounds()
-      : { x: 0, y: 0, width: 0, height: 0 }
+    const anchorBounds =
+      this.lastAnchorBounds ??
+      (this.tray ? this.tray.getBounds() : { x: 0, y: 0, width: 0, height: 0 })
 
     const display =
-      trayBounds.width > 0 || trayBounds.height > 0
-        ? screen.getDisplayMatching(trayBounds)
+      anchorBounds.width > 0 || anchorBounds.height > 0
+        ? screen.getDisplayMatching(anchorBounds)
         : screen.getPrimaryDisplay()
 
     const bounds = computePopoverBounds(
-      trayBounds,
+      anchorBounds,
       display.workArea,
       POPOVER_DIMENSIONS.WIDTH,
       this.currentHeight,

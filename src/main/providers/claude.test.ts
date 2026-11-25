@@ -20,6 +20,12 @@ describe('parseImportedClaudeCookie', () => {
     expect(res2.ok).toBe(true)
     expect(res2.credential?.cookieHeader).toContain(`sessionKey=${rawKey}`)
 
+    const curlCmd = `curl ^"https://claude.ai/api/organizations^" ^
+  -H ^"cookie: cf_clearance=1^; sessionKey=${rawKey}^; lastActiveOrg=org1^"`
+    const res3 = parseImportedClaudeCookie(curlCmd)
+    expect(res3.ok).toBe(true)
+    expect(res3.credential?.cookieHeader).toContain(`sessionKey=${rawKey}`)
+
     expect(parseImportedClaudeCookie('foo=bar').ok).toBe(false)
   })
 })

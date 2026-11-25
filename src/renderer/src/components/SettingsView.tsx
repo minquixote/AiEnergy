@@ -86,14 +86,17 @@ function ToggleSwitch({
   )
 }
 
-function getAuthSourceLabel(source: ProviderAuthSource): string {
+function getAuthSourceLabel(source: ProviderAuthSource, platform: HostPlatform): string {
+  const encLabel = platform === 'darwin' ? '키체인 암호화' : '로컬 OS 암호화'
   switch (source) {
     case 'codex_cli':
-      return 'Codex CLI 자동 연동 (~/.codex/auth.json)'
+      return platform === 'win32'
+        ? 'Codex CLI 자동 연동 (%USERPROFILE%\\.codex\\auth.json)'
+        : 'Codex CLI 자동 연동 (~/.codex/auth.json)'
     case 'imported_session':
-      return '브라우저 세션 연동됨 (키체인 암호화)'
+      return `브라우저 세션 연동됨 (${encLabel})`
     case 'imported_cookie':
-      return '브라우저 쿠키 연동됨 (키체인 암호화)'
+      return `브라우저 쿠키 연동됨 (${encLabel})`
     case 'browser_partition':
       return '앱 내 로그인 세션'
     default:
@@ -374,7 +377,7 @@ export function SettingsView({
                               : 'var(--text-muted)'
                         }}
                       >
-                        {getAuthSourceLabel(authSource)}
+                        {getAuthSourceLabel(authSource, platform)}
                       </span>
                     </div>
 
@@ -410,7 +413,11 @@ export function SettingsView({
                               setInputs((prev) => ({ ...prev, chatgpt: e.target.value }))
                               if (errorMsg) setErrors((prev) => ({ ...prev, chatgpt: null }))
                             }}
-                            placeholder="2. 열린 페이지 전체 복사(Cmd+A, Cmd+C) 후 여기에 붙여넣기(Cmd+V)"
+                            placeholder={
+                              platform === 'darwin'
+                                ? '2. 열린 페이지 전체 복사(Cmd+A, Cmd+C) 후 여기에 붙여넣기(Cmd+V)'
+                                : '2. 열린 페이지 전체 복사(Ctrl+A, Ctrl+C) 후 여기에 붙여넣기(Ctrl+V)'
+                            }
                             className="w-full resize-none rounded-md p-2 text-[10.5px] leading-relaxed outline-none"
                             style={{
                               backgroundColor: 'var(--surface-card)',
@@ -521,10 +528,21 @@ export function SettingsView({
                           className="text-[10px] leading-relaxed"
                           style={{ color: 'var(--text-secondary)' }}
                         >
-                          2. 브라우저 개발자 도구(<code className="font-mono">⌥⌘I</code>) →{' '}
-                          <strong>Network</strong> 탭 → 새로고침(<code className="font-mono">⌘R</code>)
-                          후 <code className="font-mono">executeQuery</code> 우클릭 →{' '}
-                          <strong>Copy → Copy as cURL</strong> (또는 Cookie 헤더 복사)
+                          2. 브라우저 개발자 도구(
+                          <code className="font-mono">
+                            {platform === 'darwin' ? '⌥⌘I' : 'F12'}
+                          </code>
+                          ) → <strong>Network</strong> 탭 → 새로고침(
+                          <code className="font-mono">
+                            {platform === 'darwin' ? '⌘R' : 'F5'}
+                          </code>
+                          ) 후 <code className="font-mono">executeQuery</code> 우클릭 →{' '}
+                          <strong>
+                            {platform === 'darwin'
+                              ? 'Copy → Copy as cURL'
+                              : 'Copy → Copy as cURL (cmd / bash)'}
+                          </strong>{' '}
+                          (또는 Cookie 헤더 복사)
                         </p>
 
                         <textarea
@@ -535,7 +553,11 @@ export function SettingsView({
                             setInputs((prev) => ({ ...prev, gemini: e.target.value }))
                             if (errorMsg) setErrors((prev) => ({ ...prev, gemini: null }))
                           }}
-                          placeholder="3. 복사한 Copy as cURL 전체 또는 Cookie 값을 붙여넣기(Cmd+V)"
+                          placeholder={
+                            platform === 'darwin'
+                              ? '3. 복사한 Copy as cURL 전체 또는 Cookie 값을 붙여넣기(Cmd+V)'
+                              : '3. 복사한 Copy as cURL(cmd/bash) 또는 Cookie 값을 붙여넣기(Ctrl+V)'
+                          }
                           className="w-full resize-none rounded-md p-2 text-[10.5px] leading-relaxed outline-none"
                           style={{
                             backgroundColor: 'var(--surface-card)',
@@ -732,10 +754,27 @@ export function SettingsView({
           className="flex flex-col gap-2.5 pt-2.5"
           style={{ borderTop: '1px solid var(--border-hairline)' }}
         >
+          {platform !== 'darwin' && (
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-[12px] font-medium">항상 위 미니 바 표시</div>
+                <div className="text-[10.5px]" style={{ color: 'var(--text-muted)' }}>
+                  화면 구석에 드래그 가능한 [아이콘][배터리%] 상시 표시
+                </div>
+              </div>
+              <ToggleSwitch
+                id="toggle-floating-bar"
+                checked={settings.showFloatingBar}
+                label="항상 위 미니 바 표시"
+                onChange={(next) => onUpdateSettings({ showFloatingBar: next })}
+              />
+            </div>
+          )}
+
           <div className="flex items-center justify-between gap-2">
             <div>
               <div className="text-[12px] font-medium">
-                {platform === 'darwin' ? '메뉴바 그래픽 안에 % 표시' : '메뉴바 % 표시 (macOS)'}
+                {platform === 'darwin' ? '메뉴바 그래픽 안에 % 표시' : '미니 바 그래픽 안에 % 표시'}
               </div>
               <div className="text-[10.5px]" style={{ color: 'var(--text-muted)' }}>
                 활성화된 플랫폼별 배터리 내부에 잔여 % 숫자 표시
@@ -744,7 +783,7 @@ export function SettingsView({
             <ToggleSwitch
               id="toggle-tray-percentage"
               checked={settings.showTrayPercentage}
-              label="메뉴바 배터리 그래픽 내부 퍼센트 표시"
+              label="배터리 그래픽 내부 퍼센트 표시"
               onChange={(next) => onUpdateSettings({ showTrayPercentage: next })}
             />
           </div>
@@ -769,7 +808,9 @@ export function SettingsView({
               <div className="text-[12px] font-medium">로그인 시 자동 실행</div>
               <div className="text-[10.5px]" style={{ color: 'var(--text-muted)' }}>
                 {isPackaged
-                  ? 'OS 로그인 시 메뉴바에서 자동으로 시작'
+                  ? platform === 'darwin'
+                    ? 'OS 로그인 시 메뉴바에서 자동으로 시작'
+                    : 'Windows 로그인 시 트레이에서 자동으로 시작'
                   : '설정 저장됨 · 설치 앱(.dmg/.exe)에서 OS 자동 실행 적용'}
               </div>
             </div>

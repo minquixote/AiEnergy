@@ -33,11 +33,17 @@ export interface ProviderMeta {
   usageUrl: string
 }
 
+export interface FloatingBarPosition {
+  x: number
+  y: number
+}
+
 export interface AppSettings {
   refreshIntervalMinutes: RefreshIntervalMinutes
   theme: ThemePreference
   notificationsEnabled: boolean
   showTrayPercentage: boolean
+  showFloatingBar: boolean
   launchAtLogin: boolean
   dataSourceMode: DataSourceMode
   mockScenario: MockScenarioId

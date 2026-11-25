@@ -1,3 +1,5 @@
+import { extractCookieFromDevToolsText, normalizeRawCookieHeader } from './cookieParse'
+
 export interface GeminiCookieCredential {
   cookieHeader: string
   source: 'imported_cookie'
@@ -22,46 +24,9 @@ const GOOGLE_AUTH_COOKIE_NAMES = [
   'OSID'
 ]
 
-function unescapeShellString(value: string): string {
-  return value.replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/[\r\n]+/g, ' ').trim()
-}
-
-function extractCookieFromCurlOrFetch(raw: string): string | null {
-  // Chrome/Safari "Copy as cURL": -b '...' / -b "..." / --cookie '...' / -H 'cookie: ...'
-  const curlFlagPatterns = [
-    /(?:^|\s)(?:-b|--cookie)\s+'([^']+)'/i,
-    /(?:^|\s)(?:-b|--cookie)\s+"([^"]+)"/i,
-    /(?:^|\s)(?:-H|--header)\s+'cookie:\s*([^']+)'/i,
-    /(?:^|\s)(?:-H|--header)\s+"cookie:\s*([^"]+)"/i
-  ]
-
-  for (const pattern of curlFlagPatterns) {
-    const match = raw.match(pattern)
-    if (match?.[1]) {
-      return unescapeShellString(match[1])
-    }
-  }
-
-  // Chrome DevTools "Copy as fetch": "cookie": "..."
-  const fetchMatch = raw.match(/["']cookie["']\s*:\s*["']([^"']+)["']/i)
-  if (fetchMatch?.[1]) {
-    return unescapeShellString(fetchMatch[1])
-  }
-
-  return null
-}
-
-function normalizeCookieHeader(raw: string): string {
-  return raw
-    .replace(/^\s*cookie\s*:\s*/i, '')
-    .replace(/^['"]|['"]$/g, '')
-    .replace(/[\r\n]+/g, ' ')
-    .trim()
-}
-
 /**
  * Parses a Gemini browser Cookie header pasted directly OR copied via DevTools
- * "Copy as cURL" / "Copy as fetch" on `https://gemini.google.com/usage`.
+ * "Copy as cURL (bash/cmd)" / "Copy as PowerShell" / "Copy as fetch" on `https://gemini.google.com/usage`.
  */
 export function parseImportedGeminiCookie(rawInput: string): GeminiCookieParseResult {
   const trimmed = rawInput.trim()
@@ -72,7 +37,7 @@ export function parseImportedGeminiCookie(rawInput: string): GeminiCookieParseRe
     }
   }
 
-  const extracted = extractCookieFromCurlOrFetch(trimmed) ?? normalizeCookieHeader(trimmed)
+  const extracted = extractCookieFromDevToolsText(trimmed) ?? normalizeRawCookieHeader(trimmed)
   if (!extracted || !extracted.includes('=')) {
     return {
       ok: false,

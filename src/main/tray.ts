@@ -4,14 +4,15 @@ import type { AppSettings, ProviderId, TraySummary } from '../shared/types'
 import { TrayCanvasRenderer } from './trayCanvasRenderer'
 import {
   formatTrayTooltip,
-  renderBatteryIconPng,
-  renderMultiProviderTrayPng
+  renderMultiProviderTrayPng,
+  renderWindowsSquareTrayPng
 } from './trayIcon'
 
 export interface TrayCallbacks {
   onTogglePopover: () => void
   onOpenPopover: () => void
   onRefresh: () => void
+  onToggleFloatingBar?: (next: boolean) => void
 }
 
 const PROVIDER_NAMES: Record<ProviderId, string> = {
@@ -27,22 +28,26 @@ function createFallbackTrayNativeImage(
 ): Electron.NativeImage {
   const image = nativeImage.createEmpty()
 
-  // Windows system tray enforces a square 16x16 slot, so use compact summary battery there;
-  // macOS menu bar natively renders wide multi-platform Retina strips cleanly.
+  // Windows system tray enforces a square 16x16 DIP slot, so render a true-square
+  // multi-bar energy tile at 1x (16px), 1.5x (24px), and 2x (32px) DPI.
   if (process.platform === 'win32') {
-    const png1x = renderBatteryIconPng({
-      percentage: summary.lowestRemainingPct,
-      level: summary.level,
+    const png1x = renderWindowsSquareTrayPng({
+      items: summary.items,
       isDarkTheme,
       scale: 1
     })
-    const png2x = renderBatteryIconPng({
-      percentage: summary.lowestRemainingPct,
-      level: summary.level,
+    const png15x = renderWindowsSquareTrayPng({
+      items: summary.items,
+      isDarkTheme,
+      scale: 1.5
+    })
+    const png2x = renderWindowsSquareTrayPng({
+      items: summary.items,
       isDarkTheme,
       scale: 2
     })
     image.addRepresentation({ scaleFactor: 1, buffer: png1x })
+    image.addRepresentation({ scaleFactor: 1.5, buffer: png15x })
     image.addRepresentation({ scaleFactor: 2, buffer: png2x })
     return image
   }
@@ -68,11 +73,14 @@ function createFallbackTrayNativeImage(
 
 export class TrayManager {
   private readonly tray: Tray
+  private readonly callbacks: TrayCallbacks
   private readonly canvasRenderer = new TrayCanvasRenderer()
   private renderSeq = 0
   private hasCanvasRendered = false
+  private showFloatingBar = false
 
   constructor(callbacks: TrayCallbacks) {
+    this.callbacks = callbacks
     const placeholder = createFallbackTrayNativeImage(
       {
         items: [],
@@ -90,28 +98,48 @@ export class TrayManager {
     this.tray.setToolTip(APP_NAME)
 
     this.tray.on('click', () => {
-      callbacks.onTogglePopover()
+      this.callbacks.onTogglePopover()
     })
 
-    const contextMenu = Menu.buildFromTemplate([
+    this.tray.on('right-click', () => {
+      this.tray.popUpContextMenu(this.buildContextMenu())
+    })
+  }
+
+  private buildContextMenu(): Electron.Menu {
+    const template: Electron.MenuItemConstructorOptions[] = [
       {
         label: '위젯 열기',
-        click: () => callbacks.onOpenPopover()
+        click: () => this.callbacks.onOpenPopover()
       },
       {
         label: '지금 새로고침',
-        click: () => callbacks.onRefresh()
-      },
+        click: () => this.callbacks.onRefresh()
+      }
+    ]
+
+    if (process.platform !== 'darwin' && this.callbacks.onToggleFloatingBar) {
+      const toggleFn = this.callbacks.onToggleFloatingBar
+      template.push(
+        { type: 'separator' },
+        {
+          label: '항상 위 미니 바 표시',
+          type: 'checkbox',
+          checked: this.showFloatingBar,
+          click: () => toggleFn(!this.showFloatingBar)
+        }
+      )
+    }
+
+    template.push(
       { type: 'separator' },
       {
         label: `${APP_NAME} 종료`,
         click: () => app.quit()
       }
-    ])
+    )
 
-    this.tray.on('right-click', () => {
-      this.tray.popUpContextMenu(contextMenu)
-    })
+    return Menu.buildFromTemplate(template)
   }
 
   getTray(): Tray {
@@ -121,6 +149,7 @@ export class TrayManager {
   update(summary: TraySummary, settings: AppSettings): void {
     if (this.tray.isDestroyed()) return
 
+    this.showFloatingBar = settings.showFloatingBar
     const isDark = nativeTheme.shouldUseDarkColors
     const showPercentage = settings.showTrayPercentage
 
@@ -131,7 +160,7 @@ export class TrayManager {
 
     this.tray.setToolTip(formatTrayTooltip(APP_NAME, summary.items, PROVIDER_NAMES))
 
-    // Windows compact tray slot or empty-provider state uses fast synchronous PNG icon
+    // Windows square tray slot or empty-provider state uses fast synchronous PNG icon
     if (process.platform === 'win32' || summary.items.length === 0) {
       this.renderSeq += 1
       this.hasCanvasRendered = false

@@ -30,9 +30,11 @@ export function applyLaunchAtLoginSetting(enabled: boolean): LaunchAtLoginResult
   }
 
   try {
-    app.setLoginItemSettings({
-      openAtLogin: enabled
-    })
+    app.setLoginItemSettings(
+      process.platform === 'win32'
+        ? { openAtLogin: enabled, path: process.execPath }
+        : { openAtLogin: enabled }
+    )
     return {
       appliedToOs: true,
       openAtLogin: enabled,

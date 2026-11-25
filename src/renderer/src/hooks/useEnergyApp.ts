@@ -116,15 +116,17 @@ export function useEnergyApp(): UseEnergyAppState {
   const openExternalProviderPage = useCallback(
     async (providerId: ProviderId) => {
       await getEnergyBridge().openExternalProviderPage(providerId)
+      const isWin = snapshot?.platform === 'win32'
+      const devToolsKey = isWin ? 'F12' : '⌥⌘I'
       const hint =
         providerId === 'chatgpt'
           ? '열린 세션 페이지 전체를 복사해 붙여넣어 주세요.'
           : providerId === 'gemini'
-            ? '개발자 도구(⌥⌘I) Network에서 executeQuery → Copy as cURL을 복사해 붙여넣어 주세요.'
+            ? `개발자 도구(${devToolsKey}) Network에서 executeQuery → Copy as cURL을 복사해 붙여넣어 주세요.`
             : '개발자 도구에서 sessionKey 또는 Copy as cURL을 복사해 붙여넣어 주세요.'
       showToast(hint)
     },
-    [showToast]
+    [showToast, snapshot?.platform]
   )
 
   const disconnectProvider = useCallback(

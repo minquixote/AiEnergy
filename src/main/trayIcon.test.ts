@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   formatTrayTooltip,
   renderBatteryIconPng,
-  renderMultiProviderTrayPng
+  renderMultiProviderTrayPng,
+  renderWindowsSquareTrayPng
 } from './trayIcon'
 
 const PNG_SIG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
@@ -28,6 +29,30 @@ describe('trayIcon PNG generator', () => {
 
     expect(png2x.subarray(0, 8).equals(PNG_SIG)).toBe(true)
     expect(png2x.readUInt32BE(16)).toBe(48)
+    expect(png2x.readUInt32BE(20)).toBe(32)
+  })
+
+  it('renders true-square 16x16, 24x24, and 32x32 Windows system tray PNGs', () => {
+    const items = [
+      { id: 'chatgpt' as const, status: 'ok' as const, remainingPct: 5, level: 'low' as const, badgeKind: 'percentage' as const },
+      { id: 'gemini' as const, status: 'ok' as const, remainingPct: 100, level: 'high' as const, badgeKind: 'percentage' as const },
+      { id: 'claude' as const, status: 'auth_required' as const, remainingPct: null, level: 'unknown' as const, badgeKind: 'unavailable' as const }
+    ]
+
+    const png1x = renderWindowsSquareTrayPng({ items, isDarkTheme: true, scale: 1 })
+    const png15x = renderWindowsSquareTrayPng({ items, isDarkTheme: true, scale: 1.5 })
+    const png2x = renderWindowsSquareTrayPng({ items, isDarkTheme: false, scale: 2 })
+
+    expect(png1x.subarray(0, 8).equals(PNG_SIG)).toBe(true)
+    expect(png1x.readUInt32BE(16)).toBe(16)
+    expect(png1x.readUInt32BE(20)).toBe(16)
+
+    expect(png15x.subarray(0, 8).equals(PNG_SIG)).toBe(true)
+    expect(png15x.readUInt32BE(16)).toBe(24)
+    expect(png15x.readUInt32BE(20)).toBe(24)
+
+    expect(png2x.subarray(0, 8).equals(PNG_SIG)).toBe(true)
+    expect(png2x.readUInt32BE(16)).toBe(32)
     expect(png2x.readUInt32BE(20)).toBe(32)
   })
 
@@ -85,18 +110,19 @@ describe('trayIcon PNG generator', () => {
     expect(empty.logicalHeight).toBe(16)
   })
 
-  it('formats multi-provider hover tooltip cleanly', () => {
+  it('formats multi-provider hover tooltip cleanly including N/A items', () => {
     const names = { chatgpt: 'ChatGPT', gemini: 'Gemini', claude: 'Claude' }
     expect(
       formatTrayTooltip(
         'AI Energy Bar',
         [
-          { id: 'chatgpt', status: 'ok', remainingPct: 72, level: 'high' },
-          { id: 'gemini', status: 'auth_required', remainingPct: null, level: 'unknown' }
+          { id: 'chatgpt', status: 'ok', remainingPct: 72, level: 'high', badgeKind: 'percentage' },
+          { id: 'gemini', status: 'auth_required', remainingPct: null, level: 'unknown', badgeKind: 'alert' },
+          { id: 'claude', status: 'auth_required', remainingPct: null, level: 'unknown', badgeKind: 'unavailable' }
         ],
         names
       )
-    ).toBe('AI Energy Bar · ChatGPT 72% · Gemini 재로그인 필요')
+    ).toBe('AI Energy Bar · ChatGPT 72% · Gemini 재로그인 필요 · Claude N/A')
 
     expect(formatTrayTooltip('AI Energy Bar', [], names)).toBe('AI Energy Bar · 활성 플랫폼 없음')
   })

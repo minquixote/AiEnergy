@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS, REFRESH_INTERVAL_OPTIONS } from '../shared/constants'
 import type {
   AppSettings,
   DebugLogEntry,
+  FloatingBarPosition,
   ProviderAlertState,
   ProviderId,
   ProviderUsage,
@@ -32,6 +33,15 @@ interface PersistedSchema {
   importedClaudeCookie: StoredCredentialBlob | null
   alertStates: Record<ProviderId, ProviderAlertState>
   debugLogs: DebugLogEntry[]
+  floatingBarPosition: FloatingBarPosition | null
+}
+
+function getPlatformDefaultSettings(): AppSettings {
+  return {
+    ...DEFAULT_SETTINGS,
+    showFloatingBar: process.platform === 'win32',
+    enabledProviders: { ...DEFAULT_SETTINGS.enabledProviders }
+  }
 }
 
 function sanitizeRefreshInterval(
@@ -105,14 +115,15 @@ export class AppStore {
       name: 'ai-energy-bar-config',
       defaults: {
         schemaVersion: CURRENT_SCHEMA_VERSION,
-        settings: DEFAULT_SETTINGS,
+        settings: getPlatformDefaultSettings(),
         cachedUsages: null,
         lastUpdatedAt: null,
         importedChatGptSession: null,
         importedGeminiCookie: null,
         importedClaudeCookie: null,
         alertStates: createInitialAlertStateMap(),
-        debugLogs: []
+        debugLogs: [],
+        floatingBarPosition: null
       }
     })
 
@@ -135,13 +146,31 @@ export class AppStore {
 
   getSettings(): AppSettings {
     const raw = this.store.get('settings')
-    return mergeSettings(DEFAULT_SETTINGS, raw)
+    return mergeSettings(getPlatformDefaultSettings(), raw)
   }
 
   updateSettings(patch: Partial<AppSettings>): AppSettings {
     const next = mergeSettings(this.getSettings(), patch)
     this.store.set('settings', next)
     return next
+  }
+
+  getFloatingBarPosition(): FloatingBarPosition | null {
+    const raw = this.store.get('floatingBarPosition')
+    if (
+      raw &&
+      typeof raw.x === 'number' &&
+      Number.isFinite(raw.x) &&
+      typeof raw.y === 'number' &&
+      Number.isFinite(raw.y)
+    ) {
+      return { x: Math.round(raw.x), y: Math.round(raw.y) }
+    }
+    return null
+  }
+
+  setFloatingBarPosition(position: FloatingBarPosition | null): void {
+    this.store.set('floatingBarPosition', position)
   }
 
   getCachedUsages(): Record<ProviderId, ProviderUsage> | null {

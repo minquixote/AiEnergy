@@ -519,6 +519,119 @@ export function renderBatteryIconPng(options: BatteryIconRenderOptions): Buffer 
   return encodeRgbaToPng(width, height, rgba)
 }
 
+// ---------- True-Square 16x16 DIP Multi-Bar System Tray Icon (Windows) ----------
+
+export interface WindowsSquareTrayRenderOptions {
+  items: TrayItemSummary[]
+  isDarkTheme: boolean
+  scale: 1 | 1.5 | 2
+}
+
+const WIN_SQUARE_LOGICAL_SIZE = 16
+
+/**
+ * Renders a crisp square 16x16 DIP system tray icon specifically for Windows 10/11
+ * (at 1x=16px, 1.5x=24px, 2x=32px DPI), showing stacked horizontal energy bars
+ * (one per enabled platform) so all live levels are legible at a glance.
+ */
+export function renderWindowsSquareTrayPng(options: WindowsSquareTrayRenderOptions): Buffer {
+  const { items, isDarkTheme, scale } = options
+  const size = Math.round(WIN_SQUARE_LOGICAL_SIZE * scale)
+  const rgba = new Uint8Array(size * size * 4)
+
+  const tileBg: Rgba = isDarkTheme
+    ? { r: 16, g: 20, b: 28, a: 232 }
+    : { r: 24, g: 28, b: 38, a: 236 }
+  const tileBorder: Rgba = isDarkTheme
+    ? { r: 245, g: 246, b: 248, a: 218 }
+    : { r: 24, g: 26, b: 31, a: 230 }
+  const emptyTrack: Rgba = { r: 255, g: 255, b: 255, a: 48 }
+  const alertDot: Rgba = { r: 245, g: 158, b: 11, a: 255 }
+
+  const cx = WIN_SQUARE_LOGICAL_SIZE / 2
+  const cy = WIN_SQUARE_LOGICAL_SIZE / 2
+  const boxH = 7.3
+  const boxR = 3.2
+  const stroke = 1.15
+  const aa = 0.72 / scale
+
+  const activeItems = items.slice(0, 3)
+  const barCount = Math.max(1, activeItems.length)
+  const barLeft = 2.8
+  const barRight = 13.2
+  const barW = barRight - barLeft
+  const barCx = (barLeft + barRight) / 2
+
+  const barH = barCount === 1 ? 4.4 : barCount === 2 ? 3.4 : 2.35
+  const barGap = barCount === 1 ? 0 : barCount === 2 ? 1.8 : 1.2
+  const totalBarsH = barCount * barH + (barCount - 1) * barGap
+  const topStart = cy - totalBarsH / 2
+
+  const bars = (activeItems.length > 0 ? activeItems : [null]).map((item, idx) => {
+    const by = topStart + idx * (barH + barGap) + barH / 2
+    const pct =
+      item && item.status === 'ok' && item.remainingPct !== null
+        ? Math.max(0, Math.min(100, Math.round(item.remainingPct)))
+        : null
+    const isAlert =
+      item !== null &&
+      pct === null &&
+      item.badgeKind !== 'unavailable' &&
+      (item.status === 'auth_required' || item.status === 'error')
+    const fillRight =
+      pct !== null && pct > 0 ? barLeft + Math.max(2.1, (barW * pct) / 100) : barLeft
+    const fillColor = item ? FILL_COLORS_PLAIN[item.level] : FILL_COLORS_PLAIN.unknown
+    return { by, pct, isAlert, fillRight, fillColor }
+  })
+
+  for (let py = 0; py < size; py += 1) {
+    const ly = (py + 0.5) / scale
+    for (let px = 0; px < size; px += 1) {
+      const lx = (px + 0.5) / scale
+      const offset = (py * size + px) * 4
+
+      // Outer rounded square tile background
+      const outerDist = sdRoundedBox(lx, ly, cx, cy, boxH, boxH, boxR)
+      const bgCov = Math.max(0, Math.min(1, 0.5 - (outerDist + stroke * 0.45) / aa))
+      if (bgCov > 0) {
+        blendPixel(rgba, offset, tileBg, bgCov)
+      }
+
+      // Stacked horizontal energy bars inside tile
+      for (const bar of bars) {
+        const trackDist = sdRoundedBox(lx, ly, barCx, bar.by, barW / 2, barH / 2, barH * 0.42)
+        const trackCov = Math.max(0, Math.min(1, 0.5 - trackDist / aa))
+        if (trackCov > 0) {
+          blendPixel(rgba, offset, emptyTrack, trackCov)
+        }
+
+        if (bar.pct !== null && bar.pct > 0) {
+          const fillDist = Math.max(trackDist, lx - bar.fillRight)
+          const fillCov = Math.max(0, Math.min(1, 0.5 - fillDist / aa))
+          if (fillCov > 0) {
+            blendPixel(rgba, offset, bar.fillColor, fillCov)
+          }
+        } else if (bar.isAlert) {
+          const dotDist = sdCircle(lx, ly, barRight - barH * 0.55, bar.by, Math.max(0.9, barH * 0.38))
+          const dotCov = Math.max(0, Math.min(1, 0.5 - dotDist / aa))
+          if (dotCov > 0) {
+            blendPixel(rgba, offset, alertDot, dotCov)
+          }
+        }
+      }
+
+      // Crisp border ring
+      const ringDist = Math.max(outerDist, -(outerDist + stroke))
+      const ringCov = Math.max(0, Math.min(1, 0.5 - ringDist / aa))
+      if (ringCov > 0) {
+        blendPixel(rgba, offset, tileBorder, ringCov)
+      }
+    }
+  }
+
+  return encodeRgbaToPng(size, size, rgba)
+}
+
 // ---------- Multi-Provider macOS Menu Bar Strip ([Icon][Battery with XX%]) ----------
 
 export function renderMultiProviderTrayPng(

@@ -32,6 +32,27 @@ describe('parseImportedGeminiCookie', () => {
     expect(parseImportedGeminiCookie('foo=bar; baz=1').ok).toBe(false)
     expect(parseImportedGeminiCookie('').ok).toBe(false)
   })
+
+  it('extracts cookies from Windows Chrome/Edge Copy as cURL (cmd) and Copy as PowerShell', () => {
+    const winCmd = `curl ^"https://gemini.google.com/_/BardChatUi/graphql/schemas/GEMINI_WEB_GRAPHQL/executeQuery^" ^
+  -H ^"accept: application/json^" ^
+  -b ^"__Secure-1PSID=win_abc^; __Secure-1PSIDTS=win_def^; NID=511^"`
+
+    const cmdRes = parseImportedGeminiCookie(winCmd)
+    expect(cmdRes.ok).toBe(true)
+    expect(cmdRes.credential?.cookieHeader).toBe(
+      '__Secure-1PSID=win_abc; __Secure-1PSIDTS=win_def; NID=511'
+    )
+
+    const winPs = `$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+$session.Cookies.Add((New-Object System.Net.Cookie("__Secure-1PSID", "ps_token1", "/", ".google.com")))
+$session.Cookies.Add((New-Object System.Net.Cookie("SAPISID", "ps_token2", "/", ".google.com")))
+Invoke-WebRequest -UseBasicParsing -Uri "https://gemini.google.com/usage" -WebSession $session`
+
+    const psRes = parseImportedGeminiCookie(winPs)
+    expect(psRes.ok).toBe(true)
+    expect(psRes.credential?.cookieHeader).toBe('__Secure-1PSID=ps_token1; SAPISID=ps_token2')
+  })
 })
 
 describe('parseGeminiGraphqlResponse', () => {

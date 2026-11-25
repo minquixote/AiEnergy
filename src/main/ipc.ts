@@ -1,6 +1,7 @@
 import { app, clipboard, ipcMain, shell } from 'electron'
 import { IPC_CHANNELS } from '../shared/ipc'
 import type { AppSettings, MockScenarioId, ProviderId } from '../shared/types'
+import type { FloatingBarManager } from './floatingBar'
 import type { PopoverManager } from './popover'
 import type { EnergyCoordinator } from './scheduler'
 
@@ -12,7 +13,8 @@ const EXTERNAL_PROVIDER_URLS: Record<ProviderId, string> = {
 
 export function registerIpcHandlers(
   coordinator: EnergyCoordinator,
-  popover: PopoverManager
+  popover: PopoverManager,
+  floatingBar?: FloatingBarManager
 ): void {
   ipcMain.handle(IPC_CHANNELS.GET_SNAPSHOT, () => {
     return coordinator.getSnapshot()
@@ -68,6 +70,25 @@ export function registerIpcHandlers(
     const report = coordinator.formatDiagnosticsReport()
     clipboard.writeText(report)
     return true
+  })
+
+  ipcMain.handle(IPC_CHANNELS.TOGGLE_POPOVER_FROM_FLOATING_BAR, () => {
+    floatingBar?.triggerTogglePopover()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.OPEN_FLOATING_BAR_MENU, () => {
+    floatingBar?.openContextMenu()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.RESIZE_FLOATING_BAR, (_event, width: number, height: number) => {
+    if (
+      typeof width === 'number' &&
+      Number.isFinite(width) &&
+      typeof height === 'number' &&
+      Number.isFinite(height)
+    ) {
+      floatingBar?.resize(width, height)
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.RESIZE_POPOVER, (_event, height: number) => {
