@@ -1,9 +1,10 @@
-import { nativeTheme, powerMonitor } from 'electron'
+import { app, nativeTheme, powerMonitor } from 'electron'
 import { MANUAL_REFRESH_COOLDOWN_MS, PROVIDER_META, PROVIDER_ORDER } from '../shared/constants'
 import { computeTraySummary, getCooldownRemainingMs } from '../shared/usage'
 import type {
   AppSettings,
   AppSnapshot,
+  DebugLogEntry,
   ImportSessionResult,
   LoginWindowResult,
   MockScenarioId,
@@ -13,7 +14,10 @@ import type {
   ProviderUsage,
   RefreshResult
 } from '../shared/types'
+import { createDebugLogEntry, formatDebugLogsReport } from './debugLog'
+import { applyLaunchAtLoginSetting } from './loginItem'
 import { createInitialAlertStateMap, UsageNotifier } from './notifier'
+import type { ProviderCollectResult } from './providers/base'
 import { resolveChatGptAuthSource } from './providers/chatgpt'
 import { parseImportedChatGptSession } from './providers/chatgptAuth'
 import { resolveClaudeAuthSource } from './providers/claude'
@@ -105,9 +109,18 @@ export class EnergyCoordinator {
     powerMonitor.on('resume', () => {
       const intervalMs = this.settings.refreshIntervalMinutes * 60_000
       if (!this.lastUpdatedAt || Date.now() - this.lastUpdatedAt >= intervalMs) {
+        this.recordLog({
+          providerId: 'system',
+          level: 'info',
+          message: '절전 모드 복귀 감지 — 캐시 만료로 자동 새로고침 실행'
+        })
         void this.refreshInternal(false)
       }
     })
+
+    if (app.isPackaged) {
+      applyLaunchAtLoginSetting(this.settings.launchAtLogin)
+    }
 
     this.restartAutoRefreshTimer()
     void this.syncAuthSources().then(() => this.emit())
@@ -144,8 +157,31 @@ export class EnergyCoordinator {
       platform,
       systemTheme: nativeTheme.shouldUseDarkColors ? 'dark' : 'light',
       isRefreshing: this.isRefreshing,
-      authSources: { ...this.authSources }
+      authSources: { ...this.authSources },
+      appVersion: app.getVersion(),
+      isPackaged: app.isPackaged,
+      debugLogCount: this.store.getDebugLogs().length
     }
+  }
+
+  getDebugLogs(): DebugLogEntry[] {
+    return this.store.getDebugLogs()
+  }
+
+  clearDebugLogs(): DebugLogEntry[] {
+    const cleared = this.store.clearDebugLogs()
+    this.emit()
+    return cleared
+  }
+
+  formatDiagnosticsReport(): string {
+    const snapshot = this.getSnapshot()
+    return formatDebugLogsReport(this.store.getDebugLogs(), {
+      appVersion: snapshot.appVersion,
+      platform: snapshot.platform,
+      dataSourceMode: snapshot.settings.dataSourceMode,
+      isPackaged: snapshot.isPackaged
+    })
   }
 
   async refreshManual(): Promise<RefreshResult> {
@@ -173,9 +209,19 @@ export class EnergyCoordinator {
     const prevInterval = this.settings.refreshIntervalMinutes
     const prevScenario = this.settings.mockScenario
     const prevMode = this.settings.dataSourceMode
+    const prevLaunchAtLogin = this.settings.launchAtLogin
     const prevEnabled = { ...this.settings.enabledProviders }
 
     this.settings = this.store.updateSettings(patch)
+
+    if (typeof patch.launchAtLogin === 'boolean' && patch.launchAtLogin !== prevLaunchAtLogin) {
+      const loginRes = applyLaunchAtLoginSetting(patch.launchAtLogin)
+      this.recordLog({
+        providerId: 'system',
+        level: 'info',
+        message: loginRes.diagnostic
+      })
+    }
 
     if (patch.refreshIntervalMinutes && patch.refreshIntervalMinutes !== prevInterval) {
       this.restartAutoRefreshTimer()
@@ -389,7 +435,7 @@ export class EnergyCoordinator {
     try {
       await this.syncAuthSources()
       const result = await adapter.collect()
-      this.applyLiveResult(providerId, result.usage, Boolean(result.rateLimited))
+      this.applyLiveResult(providerId, result)
       const now = Date.now()
       this.lastUpdatedAt = now
       this.store.setCachedUsages(this.usages, now)
@@ -400,17 +446,74 @@ export class EnergyCoordinator {
     }
   }
 
-  private applyLiveResult(providerId: ProviderId, usage: ProviderUsage, rateLimited: boolean): void {
+  private recordLog(input: {
+    providerId: ProviderId | 'system'
+    level: 'info' | 'warn' | 'error'
+    message: string
+    strategy?: string
+    httpStatus?: number
+    snippet?: string
+  }): void {
+    const entry = createDebugLogEntry(input)
+    this.store.appendDebugLogEntry(entry)
+  }
+
+  private applyLiveResult(providerId: ProviderId, result: ProviderCollectResult): void {
+    const { usage } = result
+    const rateLimited = Boolean(result.rateLimited)
+
     if (rateLimited) {
       const prev = this.rateLimitBackoff.get(providerId)
       const attempts = (prev?.attempts ?? 0) + 1
       const stepIdx = Math.min(attempts - 1, RATE_LIMIT_BACKOFF_STEPS_MS.length - 1)
+      const delayMs = RATE_LIMIT_BACKOFF_STEPS_MS[stepIdx]
       this.rateLimitBackoff.set(providerId, {
         attempts,
-        until: Date.now() + RATE_LIMIT_BACKOFF_STEPS_MS[stepIdx]
+        until: Date.now() + delayMs
+      })
+      this.recordLog({
+        providerId,
+        level: 'warn',
+        strategy: result.strategy,
+        httpStatus: result.httpStatus ?? 429,
+        message: `요청 제한(429) 감지 — ${Math.round(delayMs / 60_000)}분 백오프 적용`,
+        snippet: result.diagnostic ?? usage.errorMessage
       })
     } else if (usage.status === 'ok') {
       this.rateLimitBackoff.delete(providerId)
+      const planPart = usage.planName ? ` (${usage.planName})` : ''
+      const pctPart =
+        usage.sessionRemainingPct !== null
+          ? `세션 ${usage.sessionRemainingPct}%` +
+            (usage.weeklyRemainingPct !== null ? ` / 주간 ${usage.weeklyRemainingPct}%` : '')
+          : 'N/A (사용량 미제공)'
+      this.recordLog({
+        providerId,
+        level: 'info',
+        strategy: result.strategy,
+        httpStatus: result.httpStatus,
+        message: `조회 성공${planPart} · ${pctPart}`,
+        snippet: result.diagnostic
+      })
+    } else if (usage.status === 'auth_required') {
+      const isUnconnected = this.authSources[providerId] === 'none'
+      this.recordLog({
+        providerId,
+        level: isUnconnected ? 'info' : 'warn',
+        strategy: result.strategy,
+        httpStatus: result.httpStatus,
+        message: isUnconnected ? '미연결 상태 (N/A)' : '세션 만료 또는 인증 필요',
+        snippet: result.diagnostic ?? usage.errorMessage
+      })
+    } else {
+      this.recordLog({
+        providerId,
+        level: 'error',
+        strategy: result.strategy,
+        httpStatus: result.httpStatus,
+        message: usage.errorMessage ?? '사용량 조회 오류',
+        snippet: result.diagnostic
+      })
     }
 
     this.usages = {
@@ -460,7 +563,7 @@ export class EnergyCoordinator {
 
       for (const item of results) {
         if (!item) continue
-        this.applyLiveResult(item.id, item.res.usage, Boolean(item.res.rateLimited))
+        this.applyLiveResult(item.id, item.res)
       }
 
       const completedAt = Date.now()

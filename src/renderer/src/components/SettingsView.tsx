@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import {
   Check,
+  ChevronRight,
   ExternalLink,
+  FileText,
   KeyRound,
   LogIn,
   LogOut,
@@ -35,6 +37,9 @@ interface SettingsViewProps {
   usages: Record<ProviderId, ProviderUsage>
   platform: HostPlatform
   authSources: Record<ProviderId, ProviderAuthSource>
+  appVersion: string
+  isPackaged: boolean
+  debugLogCount: number
   initialExpandedProvider: ProviderId | null
   onUpdateSettings: (patch: Partial<AppSettings>) => void
   onSelectMockScenario: (scenario: MockScenarioId) => void
@@ -43,6 +48,7 @@ interface SettingsViewProps {
   onOpenExternalProviderPage: (providerId: ProviderId) => void
   onDetectCodexCli: () => void
   onDisconnect: (providerId: ProviderId) => void
+  onOpenDebugLogs: () => void
   onConnectSuccess: () => void
 }
 
@@ -115,6 +121,9 @@ export function SettingsView({
   usages,
   platform,
   authSources,
+  appVersion,
+  isPackaged,
+  debugLogCount,
   initialExpandedProvider,
   onUpdateSettings,
   onSelectMockScenario,
@@ -123,6 +132,7 @@ export function SettingsView({
   onOpenExternalProviderPage,
   onDetectCodexCli,
   onDisconnect,
+  onOpenDebugLogs,
   onConnectSuccess
 }: SettingsViewProps) {
   const [expandedProvider, setExpandedProvider] = useState<ProviderId | null>(
@@ -753,6 +763,23 @@ export function SettingsView({
               onChange={(next) => onUpdateSettings({ notificationsEnabled: next })}
             />
           </div>
+
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div className="text-[12px] font-medium">로그인 시 자동 실행</div>
+              <div className="text-[10.5px]" style={{ color: 'var(--text-muted)' }}>
+                {isPackaged
+                  ? 'OS 로그인 시 메뉴바에서 자동으로 시작'
+                  : '설정 저장됨 · 설치 앱(.dmg/.exe)에서 OS 자동 실행 적용'}
+              </div>
+            </div>
+            <ToggleSwitch
+              id="toggle-launch-at-login"
+              checked={settings.launchAtLogin}
+              label="로그인 시 자동 실행"
+              onChange={(next) => onUpdateSettings({ launchAtLogin: next })}
+            />
+          </div>
         </div>
       </section>
 
@@ -798,6 +825,43 @@ export function SettingsView({
           </div>
         </section>
       )}
+
+      {/* Section 4: Diagnostics & Debug Log Viewer */}
+      <section className="surface-card p-2">
+        <button
+          id="btn-open-debug-logs"
+          type="button"
+          onClick={onOpenDebugLogs}
+          className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition-colors cursor-pointer"
+          style={{
+            backgroundColor: 'var(--surface-subtle)',
+            color: 'var(--text-primary)'
+          }}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <FileText className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--text-secondary)' }} />
+            <div className="min-w-0">
+              <div className="text-[11.5px] font-medium leading-tight">진단 및 디버그 로그</div>
+              <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                v{appVersion} · 수집 전략·오류 확인 및 복사
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            <span
+              className="rounded px-1.5 py-[1px] text-[10px] font-medium tabular-nums"
+              style={{
+                backgroundColor: 'var(--surface-card)',
+                color: 'var(--text-secondary)'
+              }}
+            >
+              {debugLogCount}건
+            </span>
+            <ChevronRight className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
+          </div>
+        </button>
+      </section>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { app, ipcMain, shell } from 'electron'
+import { app, clipboard, ipcMain, shell } from 'electron'
 import { IPC_CHANNELS } from '../shared/ipc'
 import type { AppSettings, MockScenarioId, ProviderId } from '../shared/types'
 import type { PopoverManager } from './popover'
@@ -54,6 +54,20 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.DISCONNECT_PROVIDER, async (_event, providerId: ProviderId) => {
     return coordinator.disconnectProvider(providerId)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.GET_DEBUG_LOGS, () => {
+    return coordinator.getDebugLogs()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.CLEAR_DEBUG_LOGS, () => {
+    return coordinator.clearDebugLogs()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.COPY_DEBUG_LOGS, () => {
+    const report = coordinator.formatDiagnosticsReport()
+    clipboard.writeText(report)
+    return true
   })
 
   ipcMain.handle(IPC_CHANNELS.RESIZE_POPOVER, (_event, height: number) => {

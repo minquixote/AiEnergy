@@ -25,4 +25,20 @@ describe('computePopoverBounds', () => {
     expect(bounds.x).toBe(1920 - 340 - 8)
     expect(bounds.y).toBe(1040 - 460 - 8)
   })
+
+  it('handles notched macOS displays and left-side multi-monitor negative coordinates cleanly', () => {
+    // MacBook Pro notch display: taller menu bar (workArea.y = 37)
+    const notchedWorkArea = { x: 0, y: 37, width: 1512, height: 945 }
+    const wideTray = { x: 980, y: 0, width: 210, height: 37 }
+    const notchBounds = computePopoverBounds(wideTray, notchedWorkArea, 340, 480, 'darwin')
+    expect(notchBounds.x).toBe(980 + 105 - 170)
+    expect(notchBounds.y).toBe(37 + 6)
+
+    // Secondary monitor placed to the left of primary (negative X coordinates)
+    const leftMonitorWorkArea = { x: -1920, y: 25, width: 1920, height: 1055 }
+    const leftEdgeTray = { x: -1910, y: 0, width: 140, height: 24 }
+    const leftBounds = computePopoverBounds(leftEdgeTray, leftMonitorWorkArea, 340, 480, 'darwin')
+    expect(leftBounds.x).toBe(-1920 + 8)
+    expect(leftBounds.y).toBe(25 + 6)
+  })
 })

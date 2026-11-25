@@ -1,0 +1,74 @@
+appId: com.aienergybar.app
+productName: AI Energy Bar
+copyright: Copyright © 2026 AI Energy Bar
+asar: true
+
+directories:
+  buildResources: resources
+  output: release
+
+files:
+  - out/**/*
+  - '!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}'
+  - '!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}'
+  - '!**/node_modules/*.d.ts'
+  - '!**/node_modules/.bin'
+
+mac:
+  category: public.app-category.productivity
+  icon: resources/icon.png
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  extendInfo:
+    LSUIElement: true
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
+
+dmg:
+  title: '${productName} ${version}'
+  contents:
+    - x: 140
+      y: 180
+      type: file
+    - x: 400
+      y: 180
+      type: link
+      path: /Applications
+  window:
+    width: 540
+    height: 360
+
+win:
+  icon: resources/icon.png
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: false
+  createStartMenuShortcut: true
+  shortcutName: AI Energy Bar
+
+linux:
+  icon: resources/icon.png
+  category: Utility
+  target:
+    - target: AppImage
+      arch:
+        - x64
+
+artifactName: '${name}-${version}-${os}-${arch}.${ext}'

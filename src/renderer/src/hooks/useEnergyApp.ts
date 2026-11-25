@@ -3,6 +3,7 @@ import { PROVIDER_META } from '@shared/constants'
 import type {
   AppSettings,
   AppSnapshot,
+  DebugLogEntry,
   ImportSessionResult,
   MockScenarioId,
   ProviderId
@@ -20,6 +21,9 @@ export interface UseEnergyAppState {
   importProviderSession: (providerId: ProviderId, rawInput: string) => Promise<ImportSessionResult>
   openExternalProviderPage: (providerId: ProviderId) => Promise<void>
   disconnectProvider: (providerId: ProviderId) => Promise<void>
+  getDebugLogs: () => Promise<DebugLogEntry[]>
+  clearDebugLogs: () => Promise<DebugLogEntry[]>
+  copyDebugLogs: () => Promise<boolean>
   quitApp: () => Promise<void>
 }
 
@@ -132,6 +136,24 @@ export function useEnergyApp(): UseEnergyAppState {
     [showToast]
   )
 
+  const getDebugLogs = useCallback(async (): Promise<DebugLogEntry[]> => {
+    return getEnergyBridge().getDebugLogs()
+  }, [])
+
+  const clearDebugLogs = useCallback(async (): Promise<DebugLogEntry[]> => {
+    const next = await getEnergyBridge().clearDebugLogs()
+    showToast('디버그 로그를 비웠습니다.')
+    return next
+  }, [showToast])
+
+  const copyDebugLogs = useCallback(async (): Promise<boolean> => {
+    const ok = await getEnergyBridge().copyDebugLogs()
+    if (ok) {
+      showToast('진단 로그를 클립보드에 복사했습니다 (민감 정보 마스킹됨).')
+    }
+    return ok
+  }, [showToast])
+
   const quitApp = useCallback(async () => {
     await getEnergyBridge().quitApp()
   }, [])
@@ -147,6 +169,9 @@ export function useEnergyApp(): UseEnergyAppState {
     importProviderSession,
     openExternalProviderPage,
     disconnectProvider,
+    getDebugLogs,
+    clearDebugLogs,
+    copyDebugLogs,
     quitApp
   }
 }

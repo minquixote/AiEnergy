@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Power } from 'lucide-react'
 import { PROVIDER_META, PROVIDER_ORDER } from '@shared/constants'
 import type { EnergyLevel, ProviderId } from '@shared/types'
+import { DebugLogView } from './components/DebugLogView'
 import { Header } from './components/Header'
 import { ProviderCard } from './components/ProviderCard'
 import { SettingsView } from './components/SettingsView'
@@ -16,7 +17,7 @@ const SUMMARY_DOT_COLOR: Record<EnergyLevel, string> = {
 }
 
 export function App() {
-  const [view, setView] = useState<'main' | 'settings'>('main')
+  const [view, setView] = useState<'main' | 'settings' | 'debug'>('main')
   const [expandedProvider, setExpandedProvider] = useState<ProviderId | null>(null)
   const shellRef = useRef<HTMLDivElement | null>(null)
   const {
@@ -30,6 +31,9 @@ export function App() {
     importProviderSession,
     openExternalProviderPage,
     disconnectProvider,
+    getDebugLogs,
+    clearDebugLogs,
+    copyDebugLogs,
     quitApp
   } = useEnergyApp()
 
@@ -83,7 +87,10 @@ export function App() {
         onRefresh={() => void refreshNow()}
         onToggleView={() => {
           setExpandedProvider(null)
-          setView((prev) => (prev === 'main' ? 'settings' : 'main'))
+          setView((prev) => {
+            if (prev === 'debug') return 'settings'
+            return prev === 'main' ? 'settings' : 'main'
+          })
         }}
       />
 
@@ -135,12 +142,23 @@ export function App() {
             </div>
           )}
         </main>
+      ) : view === 'debug' ? (
+        <DebugLogView
+          appVersion={snapshot.appVersion}
+          isPackaged={snapshot.isPackaged}
+          onLoadLogs={getDebugLogs}
+          onClearLogs={clearDebugLogs}
+          onCopyLogs={copyDebugLogs}
+        />
       ) : (
         <SettingsView
           settings={snapshot.settings}
           usages={snapshot.usages}
           platform={snapshot.platform}
           authSources={snapshot.authSources}
+          appVersion={snapshot.appVersion}
+          isPackaged={snapshot.isPackaged}
+          debugLogCount={snapshot.debugLogCount}
           initialExpandedProvider={expandedProvider}
           onUpdateSettings={(patch) => void updateSettings(patch)}
           onSelectMockScenario={(scenario) => void setMockScenario(scenario)}
@@ -149,6 +167,7 @@ export function App() {
           onOpenExternalProviderPage={(providerId) => void openExternalProviderPage(providerId)}
           onDetectCodexCli={() => void refreshNow()}
           onDisconnect={(providerId) => void disconnectProvider(providerId)}
+          onOpenDebugLogs={() => setView('debug')}
           onConnectSuccess={() => {
             setExpandedProvider(null)
             setView('main')

@@ -22,13 +22,34 @@ npm run dev
    - 브라우저 개발자 도구(`⌥⌘I`) → **Network** 탭 → 새로고침(`⌘R`) → `executeQuery` 요청 우클릭 → **Copy → Copy as cURL** (또는 Cookie 헤더 복사) → 붙여넣기 → **`[Gemini 연결]`**.
 3. **Claude (Pro / Max)**
    - **Claude 카드 클릭** 후 `sessionKey` / `Copy as cURL` 붙여넣기 또는 앱 내 이메일 로그인 창으로 연결할 수 있으며, 미구독 시 설정에서 숨길 수 있습니다.
-4. **OS 데스크톱 알림**
-   - 활성화된 플랫폼의 세션 잔여량이 **20% 이하로 최초 진입**하거나 **100%로 초기화 회복** 시 1회 데스크톱 알림을 발송합니다. (설정에서 켜고 끄기 가능)
+4. **OS 데스크톱 알림 & 로그인 시 자동 실행**
+   - 활성화된 플랫폼의 세션 잔여량이 **20% 이하로 최초 진입**하거나 **100%로 초기화 회복** 시 1회 데스크톱 알림을 발송합니다.
+   - 설치 앱(`.dmg`/`.exe`) 실행 후 **설정 → 로그인 시 자동 실행** 토글을 켜면 OS 부팅/로그인 시 메뉴바에서 자동으로 시작됩니다.
+5. **진단 및 디버그 로그**
+   - **설정 → 진단 및 디버그 로그**에서 최근 60건의 수집 전략·HTTP 상태·오류 내역을 확인하고 클립보드에 복사할 수 있습니다. (쿠키·토큰·이메일 등 민감 정보는 저장 및 복사 전 자동 마스킹)
+
+## 배포 패키지 빌드 (macOS `.dmg` / Windows `.exe`)
+
+```bash
+# macOS Apple Silicon (M1~M4) 전용 .dmg + .zip 생성 (release/ 폴더 출력)
+npm run dist:mac:arm64
+
+# macOS Universal용 (arm64 + x64) .dmg + .zip 생성
+npm run dist:mac
+
+# Windows NSIS 설치 프로그램 + Portable 실행 파일 생성 (Windows 환경에서 실행)
+npm run dist:win
+```
+
+> **macOS 개인용(미서명) 빌드 설치 안내**: `electron-builder.yml`은 Apple 유료 개발자 인증서 없이 로컬 빌드할 수 있도록 `identity: null`로 설정되어 있습니다. 생성된 `release/*.dmg`에서 `AI Energy Bar.app`을 `응용 프로그램(Applications)` 폴더로 드래그한 뒤 실행할 때 보안 경고가 뜨면 **앱 우클릭 → 열기** 또는 터미널에서 `xattr -cr "/Applications/AI Energy Bar.app"`을 1회 실행해 주세요.
 
 ## 주요 스크립트
 
 ```bash
-npm run typecheck   # Main/Preload + Renderer TypeScript 검사
-npm test            # Vitest 단위 테스트
-npm run build       # 프로덕션 번들 빌드 (out/)
+npm run typecheck      # Main/Preload + Renderer TypeScript 검사
+npm test               # Vitest 단위 테스트
+npm run build          # 프로덕션 번들 빌드 (out/)
+npm run dist:mac:arm64 # Apple Silicon macOS .dmg / .zip 패키징 (release/)
+npm run dist:mac       # macOS arm64 + x64 패키징 (release/)
+npm run dist:win       # Windows NSIS / Portable 패키징 (release/)
 ```

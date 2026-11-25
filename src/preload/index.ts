@@ -17,6 +17,9 @@ const api: AiEnergyApi = {
     ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL_PROVIDER_PAGE, providerId),
   disconnectProvider: (providerId: ProviderId) =>
     ipcRenderer.invoke(IPC_CHANNELS.DISCONNECT_PROVIDER, providerId),
+  getDebugLogs: () => ipcRenderer.invoke(IPC_CHANNELS.GET_DEBUG_LOGS),
+  clearDebugLogs: () => ipcRenderer.invoke(IPC_CHANNELS.CLEAR_DEBUG_LOGS),
+  copyDebugLogs: () => ipcRenderer.invoke(IPC_CHANNELS.COPY_DEBUG_LOGS),
   resizePopover: (height: number) => ipcRenderer.invoke(IPC_CHANNELS.RESIZE_POPOVER, height),
   quitApp: () => ipcRenderer.invoke(IPC_CHANNELS.QUIT_APP),
   onSnapshotUpdated: (listener: (snapshot: AppSnapshot) => void) => {

@@ -3,11 +3,13 @@ import Store from 'electron-store'
 import { DEFAULT_SETTINGS, REFRESH_INTERVAL_OPTIONS } from '../shared/constants'
 import type {
   AppSettings,
+  DebugLogEntry,
   ProviderAlertState,
   ProviderId,
   ProviderUsage,
   RefreshIntervalMinutes
 } from '../shared/types'
+import { appendDebugLog, MAX_DEBUG_LOG_ENTRIES } from './debugLog'
 import { createInitialAlertStateMap } from './notifier'
 import type { ChatGptCredential } from './providers/chatgptAuth'
 import type { ClaudeCookieCredential } from './providers/claudeAuth'
@@ -29,6 +31,7 @@ interface PersistedSchema {
   importedGeminiCookie: StoredCredentialBlob | null
   importedClaudeCookie: StoredCredentialBlob | null
   alertStates: Record<ProviderId, ProviderAlertState>
+  debugLogs: DebugLogEntry[]
 }
 
 function sanitizeRefreshInterval(
@@ -108,7 +111,8 @@ export class AppStore {
         importedChatGptSession: null,
         importedGeminiCookie: null,
         importedClaudeCookie: null,
-        alertStates: createInitialAlertStateMap()
+        alertStates: createInitialAlertStateMap(),
+        debugLogs: []
       }
     })
 
@@ -237,5 +241,21 @@ export class AppStore {
 
   clearImportedClaudeCookie(): void {
     this.store.set('importedClaudeCookie', null)
+  }
+
+  getDebugLogs(): DebugLogEntry[] {
+    const logs = this.store.get('debugLogs')
+    return Array.isArray(logs) ? logs : []
+  }
+
+  appendDebugLogEntry(entry: DebugLogEntry): DebugLogEntry[] {
+    const next = appendDebugLog(this.getDebugLogs(), entry, MAX_DEBUG_LOG_ENTRIES)
+    this.store.set('debugLogs', next)
+    return next
+  }
+
+  clearDebugLogs(): DebugLogEntry[] {
+    this.store.set('debugLogs', [])
+    return []
   }
 }

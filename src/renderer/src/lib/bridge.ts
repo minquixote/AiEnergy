@@ -169,7 +169,10 @@ function createBrowserFallbackBridge(): AiEnergyApi {
     platform: 'darwin',
     systemTheme: getSystemTheme(),
     isRefreshing: false,
-    authSources: { chatgpt: 'none', gemini: 'none', claude: 'none' }
+    authSources: { chatgpt: 'none', gemini: 'none', claude: 'none' },
+    appVersion: '0.1.0',
+    isPackaged: false,
+    debugLogCount: 0
   })
 
   const emit = (): void => {
@@ -281,6 +284,9 @@ function createBrowserFallbackBridge(): AiEnergyApi {
       emit()
       return snapshot()
     },
+    getDebugLogs: async () => [],
+    clearDebugLogs: async () => [],
+    copyDebugLogs: async () => true,
     resizePopover: async () => undefined,
     quitApp: async () => undefined,
     onSnapshotUpdated: (listener) => {

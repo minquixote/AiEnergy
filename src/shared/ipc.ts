@@ -1,6 +1,7 @@
 import type {
   AppSettings,
   AppSnapshot,
+  DebugLogEntry,
   ImportSessionResult,
   LoginWindowResult,
   MockScenarioId,
@@ -17,6 +18,9 @@ export const IPC_CHANNELS = {
   IMPORT_PROVIDER_SESSION: 'ai-energy:import-provider-session',
   OPEN_EXTERNAL_PROVIDER_PAGE: 'ai-energy:open-external-provider-page',
   DISCONNECT_PROVIDER: 'ai-energy:disconnect-provider',
+  GET_DEBUG_LOGS: 'ai-energy:get-debug-logs',
+  CLEAR_DEBUG_LOGS: 'ai-energy:clear-debug-logs',
+  COPY_DEBUG_LOGS: 'ai-energy:copy-debug-logs',
   RESIZE_POPOVER: 'ai-energy:resize-popover',
   QUIT_APP: 'ai-energy:quit-app',
   SNAPSHOT_UPDATED: 'ai-energy:snapshot-updated'
@@ -31,6 +35,9 @@ export interface AiEnergyApi {
   importProviderSession: (providerId: ProviderId, rawInput: string) => Promise<ImportSessionResult>
   openExternalProviderPage: (providerId: ProviderId) => Promise<void>
   disconnectProvider: (providerId: ProviderId) => Promise<AppSnapshot>
+  getDebugLogs: () => Promise<DebugLogEntry[]>
+  clearDebugLogs: () => Promise<DebugLogEntry[]>
+  copyDebugLogs: () => Promise<boolean>
   resizePopover: (height: number) => Promise<void>
   quitApp: () => Promise<void>
   onSnapshotUpdated: (listener: (snapshot: AppSnapshot) => void) => () => void

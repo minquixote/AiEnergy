@@ -78,6 +78,19 @@ export interface ProviderAlertState {
   resetAlertSent: boolean
 }
 
+export type DebugLogLevel = 'info' | 'warn' | 'error'
+
+export interface DebugLogEntry {
+  id: string
+  timestamp: number
+  providerId: ProviderId | 'system'
+  level: DebugLogLevel
+  strategy?: string
+  httpStatus?: number
+  message: string
+  snippet?: string
+}
+
 export interface AppSnapshot {
   usages: Record<ProviderId, ProviderUsage>
   settings: AppSettings
@@ -88,6 +101,9 @@ export interface AppSnapshot {
   systemTheme: 'dark' | 'light'
   isRefreshing: boolean
   authSources: Record<ProviderId, ProviderAuthSource>
+  appVersion: string
+  isPackaged: boolean
+  debugLogCount: number
 }
 
 export interface RefreshResult {
