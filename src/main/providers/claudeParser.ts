@@ -1,3 +1,4 @@
+import { formatClaudePlanName } from '../../shared/planNames'
 import { calculateRemainingPct, clampPercentage } from '../../shared/usage'
 import type { ProviderUsage } from '../../shared/types'
 
@@ -74,16 +75,32 @@ export function parseClaudeUsageJson(payload: unknown): ParsedClaudeUsage | null
   }
 }
 
-export function extractClaudeOrgId(orgsPayload: unknown): string | null {
+export interface ClaudeOrgInfo {
+  orgId: string
+  planName: string | null
+}
+
+export function extractClaudeOrgInfo(orgsPayload: unknown): ClaudeOrgInfo | null {
   if (!Array.isArray(orgsPayload)) return null
   for (const entry of orgsPayload) {
     if (!isObject(entry)) continue
     const uuid = entry['uuid'] ?? entry['id']
     if (typeof uuid === 'string' && uuid.trim().length > 0) {
-      return uuid.trim()
+      return {
+        orgId: uuid.trim(),
+        planName: formatClaudePlanName({
+          rate_limit_tier: entry['rate_limit_tier'],
+          capabilities: entry['capabilities'],
+          billing_type: entry['billing_type']
+        })
+      }
     }
   }
   return null
+}
+
+export function extractClaudeOrgId(orgsPayload: unknown): string | null {
+  return extractClaudeOrgInfo(orgsPayload)?.orgId ?? null
 }
 
 function parsePctFromChunk(chunk: string): number | null {
@@ -164,7 +181,8 @@ export function parseClaudeUsageDomText(
 
 export function buildClaudeProviderUsage(
   parsed: ParsedClaudeUsage,
-  now: number = Date.now()
+  now: number = Date.now(),
+  planName: string | null = null
 ): ProviderUsage {
   return {
     id: 'claude',
@@ -173,6 +191,7 @@ export function buildClaudeProviderUsage(
     sessionResetAt: parsed.sessionResetAt,
     weeklyRemainingPct: parsed.weeklyRemainingPct,
     weeklyResetAt: parsed.weeklyResetAt,
+    planName,
     updatedAt: now
   }
 }

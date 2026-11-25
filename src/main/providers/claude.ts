@@ -14,7 +14,7 @@ import {
 import type { ClaudeCookieCredential } from './claudeAuth'
 import {
   buildClaudeProviderUsage,
-  extractClaudeOrgId,
+  extractClaudeOrgInfo,
   parseClaudeUsageDomText,
   parseClaudeUsageJson
 } from './claudeParser'
@@ -117,8 +117,8 @@ async function collectWithImportedCookie(
     }
 
     const orgPayload = (await orgRes.json().catch(() => null)) as unknown
-    const orgId = extractClaudeOrgId(orgPayload)
-    if (!orgId) {
+    const orgInfo = extractClaudeOrgInfo(orgPayload)
+    if (!orgInfo) {
       return makeAuthRequiredResult(
         'Claude 계정 조직 ID를 찾지 못했습니다. 로그인 상태를 확인해 주세요.',
         orgRes.status
@@ -126,7 +126,7 @@ async function collectWithImportedCookie(
     }
 
     const usageRes = await globalThis.fetch(
-      `https://claude.ai/api/organizations/${encodeURIComponent(orgId)}/usage`,
+      `https://claude.ai/api/organizations/${encodeURIComponent(orgInfo.orgId)}/usage`,
       {
         method: 'GET',
         headers: commonHeaders,
@@ -163,7 +163,7 @@ async function collectWithImportedCookie(
     }
 
     return {
-      usage: buildClaudeProviderUsage(parsed),
+      usage: buildClaudeProviderUsage(parsed, Date.now(), orgInfo.planName),
       strategy: 'session_fetch',
       httpStatus: usageRes.status,
       diagnostic: 'Claude 쿠키 직접 조회 완료'
@@ -210,7 +210,7 @@ export function createClaudeAdapter(
             { providerId: 'claude', timeoutMs: 22_000 },
             async (win, signal) => {
               const capture = await attachNetworkJsonCapture(win, (url) =>
-                /claude\.ai\/api\/organizations\/[^/]+\/usage/i.test(url)
+                /claude\.ai\/api\/organizations(?:\/[^/]+\/usage)?(?:\?|$)/i.test(url)
               )
 
               try {
@@ -246,8 +246,14 @@ export function createClaudeAdapter(
                 if (intercepted) {
                   const parsed = parseClaudeUsageJson(intercepted.body)
                   if (parsed) {
+                    const orgEntry = capture.captured.find(
+                      (entry) =>
+                        /claude\.ai\/api\/organizations(?:\?|$)/i.test(entry.url) &&
+                        extractClaudeOrgInfo(entry.body) !== null
+                    )
+                    const planName = orgEntry ? extractClaudeOrgInfo(orgEntry.body)?.planName ?? null : null
                     return {
-                      usage: buildClaudeProviderUsage(parsed),
+                      usage: buildClaudeProviderUsage(parsed, Date.now(), planName),
                       strategy: 'cdp_json',
                       httpStatus: intercepted.status,
                       diagnostic: 'Claude CDP JSON 수집 완료'

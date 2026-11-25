@@ -74,6 +74,7 @@ describe('parseGeminiGraphqlResponse', () => {
       const usage = buildGeminiProviderUsage(outcome.parsed, 1_780_000_000_000)
       expect(usage.id).toBe('gemini')
       expect(usage.status).toBe('ok')
+      expect(usage.planName).toBe('Pro')
     }
   })
 
@@ -125,5 +126,7 @@ describe('parseGeminiUsageDomText', () => {
     expect(parsedEn?.sessionResetAt).toBe('1:43 PM')
     expect(parsedEn?.weeklyRemainingPct).toBe(96)
     expect(parsedEn?.weeklyResetAt).toBe('Oct 21 at 12:43 PM')
+    expect(parsedEn?.subscriptionTier).toBe('PRO')
+    expect(buildGeminiProviderUsage(parsedEn!, 1_780_000_000_000).planName).toBe('Pro')
   })
 })

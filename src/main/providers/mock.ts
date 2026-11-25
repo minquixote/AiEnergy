@@ -23,6 +23,7 @@ export function buildMockUsages(
           sessionResetAt: isoFromNow(now, 3 * HOUR_MS + 18 * MINUTE_MS),
           weeklyRemainingPct: 96,
           weeklyResetAt: isoFromNow(now, 5 * DAY_MS + 4 * HOUR_MS),
+          planName: 'Pro 100',
           updatedAt: now
         },
         gemini: {
@@ -32,6 +33,7 @@ export function buildMockUsages(
           sessionResetAt: isoFromNow(now, 2 * HOUR_MS + 5 * MINUTE_MS),
           weeklyRemainingPct: 91,
           weeklyResetAt: isoFromNow(now, 4 * DAY_MS + 9 * HOUR_MS),
+          planName: 'Pro',
           updatedAt: now
         },
         claude: {
@@ -41,6 +43,7 @@ export function buildMockUsages(
           sessionResetAt: isoFromNow(now, 4 * HOUR_MS + 42 * MINUTE_MS),
           weeklyRemainingPct: 99,
           weeklyResetAt: isoFromNow(now, 6 * DAY_MS + 2 * HOUR_MS),
+          planName: 'Max',
           updatedAt: now
         }
       }
@@ -54,6 +57,7 @@ export function buildMockUsages(
           sessionResetAt: isoFromNow(now, 1 * HOUR_MS + 48 * MINUTE_MS),
           weeklyRemainingPct: 74,
           weeklyResetAt: isoFromNow(now, 3 * DAY_MS + 6 * HOUR_MS),
+          planName: 'Pro 100',
           updatedAt: now
         },
         gemini: {
@@ -63,6 +67,7 @@ export function buildMockUsages(
           sessionResetAt: isoFromNow(now, 54 * MINUTE_MS),
           weeklyRemainingPct: 68,
           weeklyResetAt: isoFromNow(now, 2 * DAY_MS + 11 * HOUR_MS),
+          planName: 'Pro',
           updatedAt: now
         },
         claude: {
@@ -72,6 +77,7 @@ export function buildMockUsages(
           sessionResetAt: isoFromNow(now, 3 * HOUR_MS + 12 * MINUTE_MS),
           weeklyRemainingPct: 88,
           weeklyResetAt: isoFromNow(now, 5 * DAY_MS + 1 * HOUR_MS),
+          planName: 'Max',
           updatedAt: now
         }
       }
@@ -85,6 +91,7 @@ export function buildMockUsages(
           sessionResetAt: isoFromNow(now, 2 * HOUR_MS + 27 * MINUTE_MS),
           weeklyRemainingPct: 89,
           weeklyResetAt: isoFromNow(now, 4 * DAY_MS + 7 * HOUR_MS),
+          planName: 'Pro 100',
           updatedAt: now
         },
         gemini: {
@@ -94,6 +101,7 @@ export function buildMockUsages(
           sessionResetAt: null,
           weeklyRemainingPct: null,
           weeklyResetAt: null,
+          planName: null,
           updatedAt: now,
           errorMessage: '로그인 세션이 만료되었습니다. 카드를 클릭해 다시 연결해 주세요.'
         },
@@ -104,6 +112,7 @@ export function buildMockUsages(
           sessionResetAt: null,
           weeklyRemainingPct: null,
           weeklyResetAt: null,
+          planName: null,
           updatedAt: now,
           errorMessage: '사용량 응답을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
         }
@@ -119,6 +128,7 @@ export function buildMockUsages(
           sessionResetAt: isoFromNow(now, 2 * HOUR_MS + 35 * MINUTE_MS),
           weeklyRemainingPct: 94,
           weeklyResetAt: isoFromNow(now, 5 * DAY_MS + 3 * HOUR_MS),
+          planName: 'Pro 100',
           updatedAt: now
         },
         gemini: {
@@ -128,6 +138,7 @@ export function buildMockUsages(
           sessionResetAt: isoFromNow(now, 1 * HOUR_MS + 14 * MINUTE_MS),
           weeklyRemainingPct: 82,
           weeklyResetAt: isoFromNow(now, 3 * DAY_MS + 8 * HOUR_MS),
+          planName: 'Pro',
           updatedAt: now
         },
         claude: {
@@ -137,6 +148,7 @@ export function buildMockUsages(
           sessionResetAt: isoFromNow(now, 41 * MINUTE_MS),
           weeklyRemainingPct: 99,
           weeklyResetAt: isoFromNow(now, 6 * DAY_MS + 5 * HOUR_MS),
+          planName: 'Max',
           updatedAt: now
         }
       }

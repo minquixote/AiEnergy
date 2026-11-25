@@ -154,16 +154,12 @@ function sdProviderIcon(
 
   switch (id) {
     case 'gemini': {
-      // Iconic Google Gemini 4-point concave sparkle star
+      // Exact 4-corner circular-cutout concave star SDF (smooth everywhere, zero axis singularity)
       const ax = Math.abs(x)
       const ay = Math.abs(y)
-      const p = 0.54
-      const eps = 1e-4
-      const f = Math.pow(ax + eps, p) + Math.pow(ay + eps, p) - 1
-      const gx = p * Math.pow(ax + eps, p - 1)
-      const gy = p * Math.pow(ay + eps, p - 1)
-      const gradLen = Math.hypot(gx, gy)
-      return (f / Math.max(gradLen, 1e-4)) * radius
+      const boxD = Math.max(ax - 1, ay - 1)
+      const cutoutD = 0.98 - Math.hypot(ax - 1.02, ay - 1.02)
+      return Math.max(boxD, cutoutD) * radius
     }
 
     case 'claude': {

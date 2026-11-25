@@ -42,7 +42,11 @@ describe('parseChatGptUsageJson', () => {
     const usage = buildChatGptProviderUsage(parsed!, fixedNow)
     expect(usage.id).toBe('chatgpt')
     expect(usage.status).toBe('ok')
+    expect(usage.planName).toBe('Pro 200')
     expect(usage.updatedAt).toBe(fixedNow)
+
+    const proliteParsed = parseChatGptUsageJson({ ...payload, plan_type: 'prolite' }, fixedNow)
+    expect(buildChatGptProviderUsage(proliteParsed!, fixedNow).planName).toBe('Pro 100')
   })
 
   it('classifies windows by limit_window_seconds even when weekly is in primary_window (Team plan)', () => {

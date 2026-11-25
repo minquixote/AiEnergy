@@ -10,6 +10,7 @@ export interface ProviderUsage {
   weeklyRemainingPct: number | null // 0 ~ 100
   weeklyResetAt: string | null
   updatedAt: number // timestamp
+  planName?: string | null // 현재 계정의 실제 구독제 (예: Pro 100, Pro 200, Go, Pro, Ultra, Max)
   errorMessage?: string
 }
 

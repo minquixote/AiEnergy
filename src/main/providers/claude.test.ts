@@ -3,6 +3,7 @@ import { parseImportedClaudeCookie } from './claudeAuth'
 import {
   buildClaudeProviderUsage,
   extractClaudeOrgId,
+  extractClaudeOrgInfo,
   parseClaudeUsageDomText,
   parseClaudeUsageJson
 } from './claudeParser'
@@ -43,9 +44,10 @@ describe('parseClaudeUsageJson', () => {
     expect(parsed?.weeklyRemainingPct).toBe(99)
     expect(parsed?.weeklyResetAt).toBe('2026-12-01T11:18:00.000Z')
 
-    const usage = buildClaudeProviderUsage(parsed!, 1_780_000_000_000)
+    const usage = buildClaudeProviderUsage(parsed!, 1_780_000_000_000, 'Max 5x')
     expect(usage.id).toBe('claude')
     expect(usage.status).toBe('ok')
+    expect(usage.planName).toBe('Max 5x')
   })
 
   it('handles weekly-only limits[] array (Ultra accounts without five_hour)', () => {
@@ -64,8 +66,18 @@ describe('parseClaudeUsageJson', () => {
     expect(parsed?.weeklyRemainingPct).toBe(85)
   })
 
-  it('extracts organization UUID cleanly', () => {
+  it('extracts organization UUID and subscription plan name cleanly', () => {
     expect(extractClaudeOrgId([{ uuid: 'org-uuid-123', name: 'Personal' }])).toBe('org-uuid-123')
+    expect(
+      extractClaudeOrgInfo([
+        {
+          uuid: 'org-uuid-123',
+          name: 'Personal',
+          rate_limit_tier: 'default_claude_max_20x',
+          capabilities: ['chat', 'claude_max']
+        }
+      ])
+    ).toEqual({ orgId: 'org-uuid-123', planName: 'Max 20x' })
     expect(extractClaudeOrgId([])).toBeNull()
   })
 })

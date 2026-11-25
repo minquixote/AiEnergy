@@ -1,3 +1,4 @@
+import { formatGeminiPlanName } from '../../shared/planNames'
 import { calculateRemainingPct, clampPercentage } from '../../shared/usage'
 import type { ProviderUsage } from '../../shared/types'
 
@@ -181,11 +182,14 @@ export function parseGeminiUsageDomText(domText: string): ParsedGeminiUsage | nu
 
   if (sPct === null && wPct === null) return null
 
+  const tierMatch = normalized.match(/usage\s+limits?\s*[—-]\s*(ultra\s*lite|ultra|pro|plus|free)/i)
+
   return {
     sessionRemainingPct: sPct ?? wPct,
     sessionResetAt: sessionChunk ? extractResetFromChunk(sessionChunk) : null,
     weeklyRemainingPct: wPct,
-    weeklyResetAt: weeklyChunk ? extractResetFromChunk(weeklyChunk) : null
+    weeklyResetAt: weeklyChunk ? extractResetFromChunk(weeklyChunk) : null,
+    subscriptionTier: tierMatch?.[1]
   }
 }
 
@@ -200,6 +204,7 @@ export function buildGeminiProviderUsage(
     sessionResetAt: parsed.sessionResetAt,
     weeklyRemainingPct: parsed.weeklyRemainingPct,
     weeklyResetAt: parsed.weeklyResetAt,
+    planName: formatGeminiPlanName(parsed.subscriptionTier),
     updatedAt: now
   }
 }

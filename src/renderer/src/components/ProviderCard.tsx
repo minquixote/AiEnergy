@@ -106,15 +106,23 @@ export function ProviderCard({
               color: 'var(--text-primary)'
             }}
           >
-            <ProviderIcon id={usage.id} className="h-3.5 w-3.5" />
+            <ProviderIcon id={usage.id} className="h-4 w-4" />
           </div>
-          <div className="flex items-baseline gap-1.5 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0">
             <span className="truncate text-[13px] font-semibold tracking-[-0.01em]">
               {meta.name}
             </span>
-            <span className="truncate text-[10.5px]" style={{ color: 'var(--text-muted)' }}>
-              {meta.planLabel}
-            </span>
+            {usage.status === 'ok' && usage.planName && (
+              <span
+                className="shrink-0 rounded px-1.5 py-[1px] text-[10px] font-semibold tracking-[-0.01em]"
+                style={{
+                  backgroundColor: 'var(--surface-subtle)',
+                  color: 'var(--text-secondary)'
+                }}
+              >
+                {usage.planName}
+              </span>
+            )}
           </div>
         </div>
 

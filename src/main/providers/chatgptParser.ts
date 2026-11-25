@@ -1,3 +1,4 @@
+import { formatChatGptPlanName } from '../../shared/planNames'
 import { calculateRemainingPct, clampPercentage } from '../../shared/usage'
 import type { ProviderUsage } from '../../shared/types'
 
@@ -289,6 +290,7 @@ export function buildChatGptProviderUsage(
     sessionResetAt: parsed.sessionResetAt,
     weeklyRemainingPct: parsed.weeklyRemainingPct,
     weeklyResetAt: parsed.weeklyResetAt,
+    planName: formatChatGptPlanName(parsed.planType),
     updatedAt: now
   }
 }

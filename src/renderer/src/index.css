@@ -89,6 +89,10 @@ textarea {
   user-select: text;
 }
 
+button:focus:not(:focus-visible) {
+  outline: none;
+}
+
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
