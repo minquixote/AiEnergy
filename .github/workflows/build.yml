@@ -92,6 +92,8 @@ jobs:
         run: npm ci
 
       - name: Package macOS (.dmg & .zip)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npm run dist:mac -- --publish never
 
       - name: Upload macOS artifacts
@@ -118,7 +120,24 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: AI Energy Bar ${{ github.ref_name }}
           generate_release_notes: true
+          body: |
+            ## AI Energy Bar ${{ github.ref_name }}
+
+            ChatGPT, Google Gemini, Claude 구독의 실시간 잔여 사용량을 macOS 메뉴바 및 Windows 시스템 트레이 / 항상 위 미니 바로 확인하는 로컬 전용 데스크톱 위젯입니다.
+
+            ### 다운로드 안내
+            - **Windows 10/11 (일반 설치 권장)**: `ai-energy-bar-*-win-x64-setup.exe`
+            - **Windows 10/11 (무설치 포터블)**: `ai-energy-bar-*-win-x64-portable.exe`
+            - **macOS (Apple Silicon — M1/M2/M3/M4)**: `ai-energy-bar-*-mac-arm64.dmg`
+            - **macOS (Intel Mac)**: `ai-energy-bar-*-mac-x64.dmg`
+
+            ### 최초 실행 시 보안 경고 해제 (개인 배포판)
+            - **Windows SmartScreen**: "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**을 클릭하세요.
+            - **macOS Gatekeeper**: `/Applications`에 복사 후 터미널에서 `xattr -cr "/Applications/AI Energy Bar.app"` 실행 뒤 열어주세요.
+
+            > 모든 인증 정보는 외부 서버 없이 사용자의 로컬 OS 암호화 저장소(macOS 키체인 / Windows DPAPI)에만 보관됩니다.
           files: |
             artifacts/*.exe
             artifacts/*.dmg
