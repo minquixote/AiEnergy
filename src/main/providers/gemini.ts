@@ -10,15 +10,23 @@ const GEMINI_USAGE_QUERY_VARIABLES = JSON.stringify({
   workspaceRequest: { recommendationsForSurfaceRequests: [] }
 })
 
-export function buildGeminiUsageGraphqlUrl(): string {
+export function buildGeminiUsageGraphqlUrl(authUserIndex?: number): string {
+  const userPrefix =
+    typeof authUserIndex === 'number' && Number.isInteger(authUserIndex) && authUserIndex > 0
+      ? `/u/${authUserIndex}`
+      : ''
   return (
-    'https://gemini.google.com/_/BardChatUi/graphql/schemas/GEMINI_WEB_GRAPHQL/executeQuery' +
+    `https://gemini.google.com${userPrefix}/_/BardChatUi/graphql/schemas/GEMINI_WEB_GRAPHQL/executeQuery` +
     `?query_signature=${encodeURIComponent(GEMINI_USAGE_QUERY_SIGNATURE)}` +
     `&variables=${encodeURIComponent(GEMINI_USAGE_QUERY_VARIABLES)}`
   )
 }
 
-function makeAuthRequiredResult(message: string, httpStatus?: number): ProviderCollectResult {
+function makeAuthRequiredResult(
+  message: string,
+  httpStatus?: number,
+  diagnostic?: string
+): ProviderCollectResult {
   const usage: ProviderUsage = {
     id: 'gemini',
     status: 'auth_required',
@@ -33,7 +41,7 @@ function makeAuthRequiredResult(message: string, httpStatus?: number): ProviderC
     usage,
     strategy: 'auth_check',
     httpStatus,
-    diagnostic: message
+    diagnostic: diagnostic ?? message
   }
 }
 
@@ -85,12 +93,17 @@ export function createGeminiAdapter(
         const timer = setTimeout(() => controller.abort(), 12_000)
 
         try {
-          const response = await globalThis.fetch(buildGeminiUsageGraphqlUrl(), {
+          const authUserLabel = cred.authUserIndex ? `u/${cred.authUserIndex}` : 'u/0'
+          const refererUrl = cred.authUserIndex
+            ? `https://gemini.google.com/u/${cred.authUserIndex}/usage`
+            : 'https://gemini.google.com/usage'
+
+          const response = await globalThis.fetch(buildGeminiUsageGraphqlUrl(cred.authUserIndex), {
             method: 'GET',
             redirect: 'manual',
             headers: {
               Accept: 'application/json',
-              Referer: 'https://gemini.google.com/usage',
+              Referer: refererUrl,
               Cookie: cred.cookieHeader
             },
             signal: controller.signal
@@ -102,9 +115,19 @@ export function createGeminiAdapter(
             response.status === 401 ||
             response.status === 403
           ) {
+            let redirectHost = ''
+            const location = response.headers.get('location')
+            if (location) {
+              try {
+                redirectHost = ` -> ${new URL(location, 'https://gemini.google.com').host}`
+              } catch {
+                redirectHost = ''
+              }
+            }
             return makeAuthRequiredResult(
-              'Gemini 브라우저 쿠키가 만료되었습니다. 설정에서 gemini.google.com/usage 쿠키를 다시 붙여넣어 주세요.',
-              response.status
+              'Gemini 브라우저 쿠키가 만료되었거나 유효하지 않습니다. 설정에서 gemini.google.com/usage 쿠키를 다시 붙여넣어 주세요.',
+              response.status,
+              `Gemini 인증 실패 (HTTP ${response.status}, ${authUserLabel}${redirectHost})`
             )
           }
 

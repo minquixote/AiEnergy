@@ -16,7 +16,7 @@ export interface SessionParseResult {
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
@@ -66,6 +66,106 @@ export function extractExpiryFromJwt(token: string): string | null {
   return null
 }
 
+function parseJsonObjectAt(
+  text: string,
+  startIndex: number
+): { value: Record<string, unknown>; endIndex: number } | null {
+  let depth = 0
+  let inString = false
+  let escaped = false
+
+  for (let i = startIndex; i < text.length; i += 1) {
+    const ch = text[i]
+    if (inString) {
+      if (escaped) {
+        escaped = false
+      } else if (ch === '\\') {
+        escaped = true
+      } else if (ch === '"') {
+        inString = false
+      }
+      continue
+    }
+
+    if (ch === '"') {
+      inString = true
+    } else if (ch === '{') {
+      depth += 1
+    } else if (ch === '}') {
+      depth -= 1
+      if (depth === 0) {
+        try {
+          const parsed = JSON.parse(text.slice(startIndex, i + 1)) as unknown
+          if (isObject(parsed)) {
+            return { value: parsed, endIndex: i }
+          }
+        } catch {
+          return null
+        }
+        return null
+      }
+    }
+  }
+
+  return null
+}
+
+function hasChatGptTokenField(obj: Record<string, unknown>): boolean {
+  if (typeof obj['accessToken'] === 'string' && obj['accessToken'].trim().length > 0) return true
+  if (typeof obj['access_token'] === 'string' && obj['access_token'].trim().length > 0) return true
+  if (isObject(obj['tokens'])) {
+    const tokens = obj['tokens']
+    if (typeof tokens['access_token'] === 'string' && tokens['access_token'].trim().length > 0) {
+      return true
+    }
+    if (typeof tokens['accessToken'] === 'string' && tokens['accessToken'].trim().length > 0) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Extracts a JSON object even when Chrome's "pretty print" bar or browser extensions
+ * inject extra lines before/after `{...}` on Ctrl+A / Cmd+A.
+ */
+function extractJsonObjectFromText(raw: string): Record<string, unknown> | null {
+  try {
+    const direct = JSON.parse(raw) as unknown
+    if (isObject(direct)) {
+      return direct
+    }
+  } catch {
+    // Fall through to balanced-brace extraction
+  }
+
+  let fallbackObject: Record<string, unknown> | null = null
+  let cursor = 0
+  let attempts = 0
+  const maxBraceAttempts = 64
+
+  while (cursor < raw.length && attempts < maxBraceAttempts) {
+    const start = raw.indexOf('{', cursor)
+    if (start === -1) break
+    attempts += 1
+
+    const candidate = parseJsonObjectAt(raw, start)
+    if (candidate) {
+      if (hasChatGptTokenField(candidate.value)) {
+        return candidate.value
+      }
+      if (!fallbackObject) {
+        fallbackObject = candidate.value
+      }
+      cursor = candidate.endIndex + 1
+    } else {
+      cursor = start + 1
+    }
+  }
+
+  return fallbackObject
+}
+
 /**
  * Parses JSON copied from `https://chatgpt.com/api/auth/session` (or a pasted raw JWT/Bearer token)
  * into a validated local ChatGPT credential.
@@ -80,7 +180,11 @@ export function parseImportedChatGptSession(rawInput: string): SessionParseResul
   }
 
   // Allow users who paste a raw "Bearer eyJ..." or "eyJ..." token directly
-  const strippedBearer = trimmed.replace(/^Bearer\s+/i, '').trim()
+  const strippedBearer = trimmed
+    .replace(/^['"]|['"]$/g, '')
+    .replace(/^Bearer\s+/i, '')
+    .replace(/^['"]|['"]$/g, '')
+    .trim()
   if (!strippedBearer.startsWith('{') && /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(strippedBearer)) {
     return {
       ok: true,
@@ -93,21 +197,33 @@ export function parseImportedChatGptSession(rawInput: string): SessionParseResul
     }
   }
 
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(trimmed)
-  } catch {
+  const parsed = extractJsonObjectFromText(trimmed)
+  if (!parsed) {
+    // Final fallback when a partial selection or extension noise truncates the JSON closing brace
+    const fallbackTokenMatch = trimmed.match(
+      /"(?:accessToken|access_token)"\s*:\s*"(eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)"/
+    )
+    if (fallbackTokenMatch?.[1]) {
+      const token = fallbackTokenMatch[1]
+      const expiresMatch = trimmed.match(/"expires"\s*:\s*"([^"]+)"/)
+      const accountIdMatch =
+        trimmed.match(/"account"\s*:\s*\{[^{}]*"id"\s*:\s*"([^"]+)"/) ??
+        trimmed.match(/"account_id"\s*:\s*"([^"]+)"/)
+      return {
+        ok: true,
+        credential: {
+          accessToken: token,
+          accountId: accountIdMatch?.[1]?.trim() || extractAccountIdFromJwt(token),
+          expiresAt: expiresMatch?.[1]?.trim() || extractExpiryFromJwt(token),
+          source: 'imported_session'
+        }
+      }
+    }
+
     return {
       ok: false,
       error:
         '올바른 JSON 형식이 아닙니다. chatgpt.com/api/auth/session 페이지 전체 텍스트를 복사해 붙여넣어 주세요.'
-    }
-  }
-
-  if (!isObject(parsed)) {
-    return {
-      ok: false,
-      error: '세션 JSON 객체가 비어 있습니다.'
     }
   }
 
@@ -117,6 +233,7 @@ export function parseImportedChatGptSession(rawInput: string): SessionParseResul
     (typeof parsed['accessToken'] === 'string' && parsed['accessToken'].trim()) ||
     (typeof parsed['access_token'] === 'string' && parsed['access_token'].trim()) ||
     (tokensObj && typeof tokensObj['access_token'] === 'string' && tokensObj['access_token'].trim()) ||
+    (tokensObj && typeof tokensObj['accessToken'] === 'string' && tokensObj['accessToken'].trim()) ||
     ''
 
   if (!accessToken || accessToken.length < 20) {

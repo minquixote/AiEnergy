@@ -46,6 +46,14 @@ export function parseImportedClaudeCookie(rawInput: string): ClaudeCookieParseRe
     }
   }
 
+  if (/[^\x20-\x7E]/.test(extracted)) {
+    return {
+      ok: false,
+      error:
+        'Cookie 값에 지원되지 않는 문자(한글/특수 제어문자 등)가 포함되어 있습니다. sessionKey 값 또는 Copy as cURL을 다시 복사해 주세요.'
+    }
+  }
+
   return {
     ok: true,
     credential: {

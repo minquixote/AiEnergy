@@ -2,6 +2,7 @@ import { extractCookieFromDevToolsText, normalizeRawCookieHeader } from './cooki
 
 export interface GeminiCookieCredential {
   cookieHeader: string
+  authUserIndex?: number
   source: 'imported_cookie'
 }
 
@@ -24,9 +25,19 @@ const GOOGLE_AUTH_COOKIE_NAMES = [
   'OSID'
 ]
 
+function extractGeminiAuthUserIndex(rawInput: string): number | undefined {
+  const pathMatch = rawInput.match(/gemini\.google\.com\/u\/(\d+)(?:\/|\b)/i)
+  const queryMatch = rawInput.match(/[?&]authuser=(\d+)\b/i)
+  const rawIndex = pathMatch?.[1] ?? queryMatch?.[1]
+  if (!rawIndex) return undefined
+  const parsed = Number.parseInt(rawIndex, 10)
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 20 ? parsed : undefined
+}
+
 /**
  * Parses a Gemini browser Cookie header pasted directly OR copied via DevTools
- * "Copy as cURL (bash/cmd)" / "Copy as PowerShell" / "Copy as fetch" on `https://gemini.google.com/usage`.
+ * "Copy as cURL (bash/cmd)" / "Copy as PowerShell" / "Copy as fetch" / "Copy request headers"
+ * on `https://gemini.google.com/usage`.
  */
 export function parseImportedGeminiCookie(rawInput: string): GeminiCookieParseResult {
   const trimmed = rawInput.trim()
@@ -42,7 +53,15 @@ export function parseImportedGeminiCookie(rawInput: string): GeminiCookieParseRe
     return {
       ok: false,
       error:
-        'Cookie 값을 찾지 못했습니다. gemini.google.com/usage의 개발자 도구(Network)에서 executeQuery 요청을 Copy as cURL로 복사해 붙여넣어 주세요.'
+        'Cookie 값을 찾지 못했습니다. gemini.google.com/usage의 개발자 도구(Network)에서 usage 또는 executeQuery 요청을 Copy as cURL로 복사해 붙여넣어 주세요.'
+    }
+  }
+
+  if (/[^\x20-\x7E]/.test(extracted)) {
+    return {
+      ok: false,
+      error:
+        'Cookie 값에 지원되지 않는 문자(한글/특수 제어문자 등)가 포함되어 있습니다. Network 탭의 usage 요청을 Copy as cURL로 다시 복사해 주세요.'
     }
   }
 
@@ -62,10 +81,13 @@ export function parseImportedGeminiCookie(rawInput: string): GeminiCookieParseRe
     }
   }
 
+  const authUserIndex = extractGeminiAuthUserIndex(trimmed)
+
   return {
     ok: true,
     credential: {
       cookieHeader: extracted,
+      ...(authUserIndex ? { authUserIndex } : {}),
       source: 'imported_cookie'
     }
   }

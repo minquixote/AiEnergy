@@ -242,8 +242,16 @@ export class AppStore {
     if (!parsed || typeof parsed.cookieHeader !== 'string' || !parsed.cookieHeader.includes('=')) {
       return null
     }
+    const authUserIndex =
+      typeof parsed.authUserIndex === 'number' &&
+      Number.isInteger(parsed.authUserIndex) &&
+      parsed.authUserIndex > 0 &&
+      parsed.authUserIndex <= 20
+        ? parsed.authUserIndex
+        : undefined
     return {
       cookieHeader: parsed.cookieHeader,
+      ...(authUserIndex ? { authUserIndex } : {}),
       source: 'imported_cookie'
     }
   }

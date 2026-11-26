@@ -1,10 +1,27 @@
 import { describe, expect, it } from 'vitest'
+import { buildGeminiUsageGraphqlUrl } from './gemini'
 import { parseImportedGeminiCookie } from './geminiAuth'
 import {
   buildGeminiProviderUsage,
   parseGeminiGraphqlResponse,
   parseGeminiUsageDomText
 } from './geminiParser'
+
+/**
+ * Exact replica of Chromium DevTools `escapeStringWin` in NetworkLogView.ts
+ * used by Windows Chrome/Edge "Copy as cURL (cmd)".
+ */
+function chromiumEscapeStringWin(str: string): string {
+  return (
+    '^"' +
+    str
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/[^a-zA-Z0-9\s_\-:=+~'/.,?;]/g, '^$&')
+      .replace(/%(?=[a-zA-Z0-9_])/g, '%^') +
+    '^"'
+  )
+}
 
 describe('parseImportedGeminiCookie', () => {
   it('extracts Cookie header from Chrome DevTools Copy as cURL (-b and -H variants)', () => {
@@ -46,12 +63,88 @@ describe('parseImportedGeminiCookie', () => {
 
     const winPs = `$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 $session.Cookies.Add((New-Object System.Net.Cookie("__Secure-1PSID", "ps_token1", "/", ".google.com")))
-$session.Cookies.Add((New-Object System.Net.Cookie("SAPISID", "ps_token2", "/", ".google.com")))
+$session.Cookies.Add((New-Object System.Net.Cookie("SAPISID", "ps_\`"quoted\`"", "/", ".google.com")))
 Invoke-WebRequest -UseBasicParsing -Uri "https://gemini.google.com/usage" -WebSession $session`
 
     const psRes = parseImportedGeminiCookie(winPs)
     expect(psRes.ok).toBe(true)
-    expect(psRes.credential?.cookieHeader).toBe('__Secure-1PSID=ps_token1; SAPISID=ps_token2')
+    expect(psRes.credential?.cookieHeader).toBe('__Secure-1PSID=ps_token1; SAPISID=ps_"quoted"')
+  })
+
+  it('roundtrips real Chromium escapeStringWin cookies containing %XX (^%^3D), quotes (^\\^"), carets, and symbols', () => {
+    const originalCookie =
+      'PREF="f6=400&tz=Asia.Seoul"; NID=520=abc%3Ddef%2Fghi; AEC=AQTF6!#$@[]{}()~; ' +
+      '__Secure-1PSID=g.a000^caret; __Secure-1PSIDTS=sidts-%%3D-%^3; ' +
+      'COMPASS=a\\b; ESC=foo\\"bar; TAIL=end\\'
+
+    const winCurl = [
+      `curl ${chromiumEscapeStringWin('https://gemini.google.com/usage')} ^`,
+      `  -H ${chromiumEscapeStringWin('sec-ch-ua: "Google Chrome";v="142"')} ^`,
+      `  -b ${chromiumEscapeStringWin(originalCookie)} ^`,
+      `  -H ${chromiumEscapeStringWin('user-agent: Mozilla/5.0')}`
+    ].join('\r\n')
+
+    const res = parseImportedGeminiCookie(winCurl)
+    expect(res.ok).toBe(true)
+    expect(res.credential?.cookieHeader).toBe(originalCookie)
+  })
+
+  it('supports Chrome Copy as cURL (bash) ANSI-C $\'...\' quoting, Copy as fetch, and multi-line Request Headers', () => {
+    const bashAnsiC = `curl 'https://gemini.google.com/usage' \\
+  -b $'__Secure-1PSID=tok_1; NOTE=it\\'s_ok; SID=sid_2'`
+    const ansiRes = parseImportedGeminiCookie(bashAnsiC)
+    expect(ansiRes.ok).toBe(true)
+    expect(ansiRes.credential?.cookieHeader).toBe("__Secure-1PSID=tok_1; NOTE=it's_ok; SID=sid_2")
+
+    const fetchNode = `fetch("https://gemini.google.com/usage", {
+  "headers": {
+    "accept": "text/html",
+    "cookie": "__Secure-1PSID=f_1; PREF=\\"tz=Seoul\\"; SAPISID=f_2"
+  },
+  "method": "GET"
+});`
+    const fetchRes = parseImportedGeminiCookie(fetchNode)
+    expect(fetchRes.ok).toBe(true)
+    expect(fetchRes.credential?.cookieHeader).toBe(
+      '__Secure-1PSID=f_1; PREF="tz=Seoul"; SAPISID=f_2'
+    )
+
+    const rawHeaders = [
+      ':authority: gemini.google.com',
+      ':method: GET',
+      ':path: /usage',
+      ':scheme: https',
+      'accept: text/html',
+      'cookie: __Secure-1PSID=hdr_1; __Secure-1PSIDTS=hdr_2; NID=520=abc%3D',
+      'user-agent: Mozilla/5.0'
+    ].join('\r\n')
+    const headersRes = parseImportedGeminiCookie(rawHeaders)
+    expect(headersRes.ok).toBe(true)
+    expect(headersRes.credential?.cookieHeader).toBe(
+      '__Secure-1PSID=hdr_1; __Secure-1PSIDTS=hdr_2; NID=520=abc%3D'
+    )
+  })
+
+  it('detects Google multi-account /u/N/ index from copied Gemini requests and builds matching GraphQL URL', () => {
+    const multiAccountCurl = `curl ^"https://gemini.google.com/u/1/usage^" ^
+  -b ^"__Secure-1PSID=acct1_tok; __Secure-1PSIDTS=acct1_ts^"`
+    const res = parseImportedGeminiCookie(multiAccountCurl)
+    expect(res.ok).toBe(true)
+    expect(res.credential?.authUserIndex).toBe(1)
+
+    expect(buildGeminiUsageGraphqlUrl()).toContain(
+      'https://gemini.google.com/_/BardChatUi/graphql/schemas/GEMINI_WEB_GRAPHQL/executeQuery'
+    )
+    expect(buildGeminiUsageGraphqlUrl(1)).toContain(
+      'https://gemini.google.com/u/1/_/BardChatUi/graphql/schemas/GEMINI_WEB_GRAPHQL/executeQuery'
+    )
+  })
+
+  it('rejects non-ASCII garbage inside Cookie header before fetch throws ByteString errors', () => {
+    const invalid = '__Secure-1PSID=abc; 한글쿠키=값'
+    const res = parseImportedGeminiCookie(invalid)
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain('지원되지 않는 문자')
   })
 })
 

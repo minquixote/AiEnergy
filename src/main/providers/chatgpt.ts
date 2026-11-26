@@ -250,8 +250,8 @@ async function readPageDiagnostics(win: Electron.BrowserWindow): Promise<{
 export async function resolveChatGptAuthSource(
   getImportedSession: () => ChatGptCredential | null
 ): Promise<ProviderAuthSource> {
-  if (readCodexCliCredential()) return 'codex_cli'
   if (getImportedSession()) return 'imported_session'
+  if (readCodexCliCredential()) return 'codex_cli'
   if (await hasAnyChatGptCookie()) return 'browser_partition'
   return 'none'
 }
@@ -264,25 +264,17 @@ export function createChatGptAdapter(
 
     collect(): Promise<ProviderCollectResult> {
       return runSingleFlightCollection('chatgpt', async () => {
-        // Tier 1: Official Codex CLI local credentials (~/.codex/auth.json)
-        const codexCred = readCodexCliCredential()
-        if (codexCred) {
-          const direct = await collectWithDirectToken(codexCred)
-          if (direct.usage.status === 'ok' || direct.rateLimited) {
-            return direct
-          }
-          // If Codex token expired, allow falling through to imported browser session if user provided one
-          const importedFallback = getImportedSession()
-          if (importedFallback) {
-            return collectWithDirectToken(importedFallback)
-          }
-          return direct
-        }
-
-        // Tier 2: User-imported Chrome/Safari browser session (encrypted locally via safeStorage)
+        // Tier 1: Explicit user-imported Chrome/Safari browser session (encrypted locally via safeStorage)
+        // Must take precedence over auto-detected ~/.codex/auth.json so users can switch accounts via Settings.
         const importedCred = getImportedSession()
         if (importedCred) {
           return collectWithDirectToken(importedCred)
+        }
+
+        // Tier 2: Official Codex CLI local credentials (~/.codex/auth.json)
+        const codexCred = readCodexCliCredential()
+        if (codexCred) {
+          return collectWithDirectToken(codexCred)
         }
 
         // Tier 3: Embedded persist:chatgpt partition fallback (for direct email-code login users)
