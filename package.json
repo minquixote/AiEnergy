@@ -1,6 +1,6 @@
 {
   "name": "ai-energy-bar",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Personal AI subscription remaining usage widget for macOS menu bar and Windows system tray",
   "author": {
     "name": "김영민",
