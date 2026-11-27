@@ -13,7 +13,10 @@ export interface ProviderRegistry {
 export function createProviderRegistry(store: AppStore): ProviderRegistry {
   const adapters: Record<ProviderId, ProviderAdapter> = {
     chatgpt: createChatGptAdapter(() => store.getImportedChatGptSession()),
-    gemini: createGeminiAdapter(() => store.getImportedGeminiCookie()),
+    gemini: createGeminiAdapter(
+      () => store.getImportedGeminiCookie(),
+      (cred) => store.saveImportedGeminiCookie(cred)
+    ),
     claude: createClaudeAdapter(() => store.getImportedClaudeCookie())
   }
 

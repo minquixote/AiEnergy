@@ -17,6 +17,7 @@ import {
   parseChatGptUsageDomText,
   parseChatGptUsageJson
 } from './chatgptParser'
+import { formatNetworkError } from './netHttp'
 
 const CHATGPT_WHAM_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage'
 const CHATGPT_USAGE_URLS = [
@@ -142,7 +143,7 @@ async function collectWithDirectToken(
       diagnostic: `${credential.source} 직접 조회 완료 (${parsed.planType ?? 'unknown'})`
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = formatNetworkError(err)
     return makeErrorResult(`ChatGPT 직접 조회 중 네트워크 오류: ${msg}`, { diagnostic: msg })
   } finally {
     clearTimeout(timer)

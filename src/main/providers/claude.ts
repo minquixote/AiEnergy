@@ -18,6 +18,7 @@ import {
   parseClaudeUsageDomText,
   parseClaudeUsageJson
 } from './claudeParser'
+import { formatNetworkError, getHeaderValue, netHttpRequest } from './netHttp'
 
 const CLAUDE_USAGE_URL = 'https://claude.ai/settings/usage'
 
@@ -69,12 +70,17 @@ async function hasAnyClaudeCookie(): Promise<boolean> {
   return cookies.length > 0
 }
 
+function parseJsonSafe(body: string): unknown {
+  try {
+    return JSON.parse(body) as unknown
+  } catch {
+    return null
+  }
+}
+
 async function collectWithImportedCookie(
   cred: ClaudeCookieCredential
 ): Promise<ProviderCollectResult> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 12_000)
-
   try {
     const commonHeaders = {
       Accept: 'application/json',
@@ -82,10 +88,12 @@ async function collectWithImportedCookie(
       Cookie: cred.cookieHeader
     }
 
-    const orgRes = await globalThis.fetch('https://claude.ai/api/organizations', {
+    const orgRes = await netHttpRequest({
+      url: 'https://claude.ai/api/organizations',
       method: 'GET',
+      redirect: 'follow',
       headers: commonHeaders,
-      signal: controller.signal
+      timeoutMs: 12_000
     })
 
     if (orgRes.status === 429) {
@@ -95,7 +103,7 @@ async function collectWithImportedCookie(
       )
     }
 
-    const cfMitigated = orgRes.headers.get('cf-mitigated')
+    const cfMitigated = getHeaderValue(orgRes.headers, 'cf-mitigated')
     if (orgRes.status === 403 && cfMitigated === 'challenge') {
       return makeAuthRequiredResult(
         'Claude 보안 확인(Cloudflare)이 감지되었습니다. VPN을 끄거나 설정의 앱 내 로그인 창으로 확인해 주세요.',
@@ -110,13 +118,13 @@ async function collectWithImportedCookie(
       )
     }
 
-    if (!orgRes.ok) {
+    if (orgRes.status < 200 || orgRes.status >= 300) {
       return makeErrorResult(`Claude 조직 정보 조회 실패 (HTTP ${orgRes.status}).`, {
         httpStatus: orgRes.status
       })
     }
 
-    const orgPayload = (await orgRes.json().catch(() => null)) as unknown
+    const orgPayload = parseJsonSafe(orgRes.body)
     const orgInfo = extractClaudeOrgInfo(orgPayload)
     if (!orgInfo) {
       return makeAuthRequiredResult(
@@ -125,14 +133,13 @@ async function collectWithImportedCookie(
       )
     }
 
-    const usageRes = await globalThis.fetch(
-      `https://claude.ai/api/organizations/${encodeURIComponent(orgInfo.orgId)}/usage`,
-      {
-        method: 'GET',
-        headers: commonHeaders,
-        signal: controller.signal
-      }
-    )
+    const usageRes = await netHttpRequest({
+      url: `https://claude.ai/api/organizations/${encodeURIComponent(orgInfo.orgId)}/usage`,
+      method: 'GET',
+      redirect: 'follow',
+      headers: commonHeaders,
+      timeoutMs: 12_000
+    })
 
     if (usageRes.status === 429) {
       return makeErrorResult(
@@ -148,13 +155,13 @@ async function collectWithImportedCookie(
       )
     }
 
-    if (!usageRes.ok) {
+    if (usageRes.status < 200 || usageRes.status >= 300) {
       return makeErrorResult(`Claude 사용량 API 응답 오류 (HTTP ${usageRes.status}).`, {
         httpStatus: usageRes.status
       })
     }
 
-    const usagePayload = (await usageRes.json().catch(() => null)) as unknown
+    const usagePayload = parseJsonSafe(usageRes.body)
     const parsed = parseClaudeUsageJson(usagePayload)
     if (!parsed) {
       const isEmptyQuotaObject =
@@ -195,10 +202,8 @@ async function collectWithImportedCookie(
       diagnostic: 'Claude 쿠키 직접 조회 완료'
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = formatNetworkError(err)
     return makeErrorResult(`Claude 조회 중 네트워크 오류: ${msg}`, { diagnostic: msg })
-  } finally {
-    clearTimeout(timer)
   }
 }
 

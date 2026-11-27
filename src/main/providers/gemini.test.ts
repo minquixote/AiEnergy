@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { buildGeminiUsageGraphqlUrl } from './gemini'
-import { parseImportedGeminiCookie } from './geminiAuth'
+import { buildGeminiUsageGraphqlUrl, createGeminiAdapter } from './gemini'
+import { parseImportedGeminiCookie, type GeminiCookieCredential } from './geminiAuth'
 import {
   buildGeminiProviderUsage,
   parseGeminiGraphqlResponse,
   parseGeminiUsageDomText
 } from './geminiParser'
+import type { NetHttpRequestOptions, NetHttpResponse } from './netHttp'
 
 /**
  * Exact replica of Chromium DevTools `escapeStringWin` in NetworkLogView.ts
@@ -242,5 +243,126 @@ describe('parseGeminiUsageDomText', () => {
     expect(parsedEn?.weeklyResetAt).toBe('Oct 21 at 12:43 PM')
     expect(parsedEn?.subscriptionTier).toBe('PRO')
     expect(buildGeminiProviderUsage(parsedEn!, 1_780_000_000_000).planName).toBe('Pro')
+  })
+})
+
+describe('createGeminiAdapter self-healing & transport resilience', () => {
+  const validGraphqlBody = `)]}'\n${JSON.stringify([
+    {
+      data: {
+        viewer: {
+          rpcs: {
+            getUsageInfo: {
+              subscriptionTier: 'TIER1',
+              pools: [
+                {
+                  poolType: 'GXU_FIVE_HOURLY',
+                  percentageUsed: 0.21,
+                  gxu: { windowRefreshesAt: '2026-11-27T05:00:00Z' }
+                },
+                {
+                  poolType: 'GXU_WEEKLY',
+                  percentageUsed: 0.03,
+                  gxu: { windowRefreshesAt: '2026-12-01T12:00:00Z' }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ])}`
+
+  it('auto-rotates stale __Secure-1PSIDTS via accounts.google.com/RotateCookies, persists updated cookie, and retries seamlessly', async () => {
+    let stored: GeminiCookieCredential = {
+      cookieHeader: '__Secure-1PSID=psid_ok; __Secure-1PSIDTS=stale_ts; SID=sid_ok',
+      source: 'imported_cookie'
+    }
+    const calls: NetHttpRequestOptions[] = []
+
+    const adapter = createGeminiAdapter(
+      () => stored,
+      (next) => {
+        stored = next
+      },
+      async (req): Promise<NetHttpResponse> => {
+        calls.push(req)
+        if (req.url.includes('RotateCookies')) {
+          return {
+            status: 200,
+            headers: {
+              'set-cookie': ['__Secure-1PSIDTS=fresh_ts_2026; Path=/; Secure; HttpOnly']
+            },
+            body: '["fresh"]'
+          }
+        }
+        // First executeQuery returns 302 redirect to accounts.google.com due to stale 1PSIDTS
+        if (req.headers?.Cookie?.includes('stale_ts')) {
+          return {
+            status: 302,
+            headers: { location: 'https://accounts.google.com/ServiceLogin' },
+            body: '',
+            redirectUrl: 'https://accounts.google.com/ServiceLogin'
+          }
+        }
+        // Retry with fresh_ts_2026 succeeds and returns passive Set-Cookie update
+        return {
+          status: 200,
+          headers: {
+            'set-cookie': ['__Secure-1PSIDCC=cc_updated; Path=/; Secure']
+          },
+          body: validGraphqlBody
+        }
+      }
+    )
+
+    const result = await adapter.collect()
+    expect(result.usage.status).toBe('ok')
+    expect(result.usage.sessionRemainingPct).toBe(79)
+    expect(result.usage.weeklyRemainingPct).toBe(97)
+    expect(result.diagnostic).toContain('쿠키 자동 갱신(__Secure-1PSIDTS)')
+    expect(calls).toHaveLength(3)
+    expect(calls[1].url).toBe('https://accounts.google.com/RotateCookies')
+    expect(calls[1].method).toBe('POST')
+    expect(stored.cookieHeader).toContain('__Secure-1PSIDTS=fresh_ts_2026')
+    expect(stored.cookieHeader).toContain('__Secure-1PSIDCC=cc_updated')
+  })
+
+  it('retries once on transient network socket failure and surfaces cause details when persistent', async () => {
+    const stored: GeminiCookieCredential = {
+      cookieHeader: '__Secure-1PSID=psid_ok; __Secure-1PSIDTS=valid_ts',
+      source: 'imported_cookie'
+    }
+    let attempt = 0
+
+    const recoveringAdapter = createGeminiAdapter(
+      () => stored,
+      undefined,
+      async (): Promise<NetHttpResponse> => {
+        attempt += 1
+        if (attempt === 1) {
+          throw new Error('net::ERR_CONNECTION_RESET')
+        }
+        return { status: 200, headers: {}, body: validGraphqlBody }
+      }
+    )
+
+    const recovered = await recoveringAdapter.collect()
+    expect(recovered.usage.status).toBe('ok')
+    expect(attempt).toBe(2)
+
+    const failingAdapter = createGeminiAdapter(
+      () => stored,
+      undefined,
+      async (): Promise<NetHttpResponse> => {
+        const err = new TypeError('fetch failed') as Error & { cause?: { code: string } }
+        err.cause = { code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' }
+        throw err
+      }
+    )
+
+    const failed = await failingAdapter.collect()
+    expect(failed.usage.status).toBe('error')
+    expect(failed.usage.errorMessage).toContain('UNABLE_TO_VERIFY_LEAF_SIGNATURE')
   })
 })

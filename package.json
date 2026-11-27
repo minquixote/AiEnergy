@@ -1,6 +1,6 @@
 {
   "name": "ai-energy-bar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Personal AI subscription remaining usage widget for macOS menu bar and Windows system tray",
   "author": "AI Energy Bar",
   "type": "module",

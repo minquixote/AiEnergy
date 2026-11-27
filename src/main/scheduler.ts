@@ -62,6 +62,7 @@ export class EnergyCoordinator {
   private readonly notifier: UsageNotifier
   private readonly listeners = new Set<SnapshotListener>()
   private readonly rateLimitBackoff = new Map<ProviderId, BackoffState>()
+  private readonly consecutiveTransientErrors = new Map<ProviderId, number>()
 
   private usages: Record<ProviderId, ProviderUsage>
   private settings: AppSettings
@@ -466,11 +467,16 @@ export class EnergyCoordinator {
     this.store.appendDebugLogEntry(entry)
   }
 
-  private applyLiveResult(providerId: ProviderId, result: ProviderCollectResult): void {
+  private applyLiveResult(
+    providerId: ProviderId,
+    result: ProviderCollectResult,
+    options?: { isBackgroundAutoRefresh?: boolean }
+  ): void {
     const { usage } = result
     const rateLimited = Boolean(result.rateLimited)
 
     if (rateLimited) {
+      this.consecutiveTransientErrors.set(providerId, 0)
       const prev = this.rateLimitBackoff.get(providerId)
       const attempts = (prev?.attempts ?? 0) + 1
       const stepIdx = Math.min(attempts - 1, RATE_LIMIT_BACKOFF_STEPS_MS.length - 1)
@@ -489,6 +495,7 @@ export class EnergyCoordinator {
       })
     } else if (usage.status === 'ok') {
       this.rateLimitBackoff.delete(providerId)
+      this.consecutiveTransientErrors.set(providerId, 0)
       const planPart = usage.planName ? ` (${usage.planName})` : ''
       const pctPart =
         usage.sessionRemainingPct !== null
@@ -504,6 +511,7 @@ export class EnergyCoordinator {
         snippet: result.diagnostic
       })
     } else if (usage.status === 'auth_required') {
+      this.consecutiveTransientErrors.set(providerId, 0)
       const isUnconnected = this.authSources[providerId] === 'none'
       this.recordLog({
         providerId,
@@ -514,6 +522,22 @@ export class EnergyCoordinator {
         snippet: result.diagnostic ?? usage.errorMessage
       })
     } else {
+      const prevUsage = this.usages[providerId]
+      const errCount = (this.consecutiveTransientErrors.get(providerId) ?? 0) + 1
+      this.consecutiveTransientErrors.set(providerId, errCount)
+
+      if (options?.isBackgroundAutoRefresh && prevUsage?.status === 'ok' && errCount === 1) {
+        this.recordLog({
+          providerId,
+          level: 'warn',
+          strategy: result.strategy,
+          httpStatus: result.httpStatus,
+          message: `일시적 조회 오류 — 이전 측정값 유지 후 다음 주기에 재시도 (${usage.errorMessage ?? '오류'})`,
+          snippet: result.diagnostic
+        })
+        return
+      }
+
       this.recordLog({
         providerId,
         level: 'error',
@@ -571,7 +595,7 @@ export class EnergyCoordinator {
 
       for (const item of results) {
         if (!item) continue
-        this.applyLiveResult(item.id, item.res)
+        this.applyLiveResult(item.id, item.res, { isBackgroundAutoRefresh: !isManual })
       }
 
       const completedAt = Date.now()
