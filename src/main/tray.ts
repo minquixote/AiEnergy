@@ -142,6 +142,10 @@ export class TrayManager {
     template.push(
       { type: 'separator' },
       {
+        label: `${APP_NAME} 정보`,
+        click: () => app.showAboutPanel()
+      },
+      {
         label: `${APP_NAME} 종료`,
         click: () => app.quit()
       }

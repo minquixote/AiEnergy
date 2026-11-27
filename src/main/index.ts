@@ -1,4 +1,5 @@
 import { app, session } from 'electron'
+import { APP_AUTHOR, APP_NAME } from '../shared/constants'
 import { IPC_CHANNELS } from '../shared/ipc'
 import { FloatingBarManager } from './floatingBar'
 import { registerIpcHandlers } from './ipc'
@@ -56,6 +57,15 @@ if (!gotLock) {
   })
 
   app.whenReady().then(() => {
+    app.setAboutPanelOptions({
+      applicationName: APP_NAME,
+      applicationVersion: app.getVersion(),
+      copyright: APP_AUTHOR.copyright,
+      credits: `제작: ${APP_AUTHOR.name} (${APP_AUTHOR.email})`,
+      authors: [`${APP_AUTHOR.name} <${APP_AUTHOR.email}>`],
+      website: APP_AUTHOR.repositoryUrl
+    })
+
     if (process.platform === 'darwin') {
       app.dock?.hide()
     }

@@ -8,6 +8,13 @@ import type {
 
 export const APP_NAME = 'AI Energy Bar'
 
+export const APP_AUTHOR = {
+  name: '김영민',
+  email: 'kimym@me.com',
+  copyright: 'Copyright © 2026 김영민 (kimym@me.com)',
+  repositoryUrl: 'https://github.com/minquixote/AiEnergy'
+} as const
+
 export const PROVIDER_ORDER: readonly ProviderId[] = ['chatgpt', 'gemini', 'claude']
 
 export const PROVIDER_META: Record<ProviderId, ProviderMeta> = {

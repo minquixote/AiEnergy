@@ -138,6 +138,8 @@ jobs:
             - **macOS Gatekeeper**: `/Applications`에 복사 후 터미널에서 `xattr -cr "/Applications/AI Energy Bar.app"` 실행 뒤 열어주세요.
 
             > 모든 인증 정보는 외부 서버 없이 사용자의 로컬 OS 암호화 저장소(macOS 키체인 / Windows DPAPI)에만 보관됩니다.
+            >
+            > 제작: 김영민 (`kimym@me.com`)
           files: |
             artifacts/*.exe
             artifacts/*.dmg

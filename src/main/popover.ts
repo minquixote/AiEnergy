@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url'
-import { BrowserWindow, app, screen, type Tray } from 'electron'
+import { BrowserWindow, app, screen, shell, type Tray } from 'electron'
 import { POPOVER_DIMENSIONS } from '../shared/constants'
 import { computePopoverBounds, type Rect } from './popoverBounds'
 
@@ -61,6 +61,20 @@ export class PopoverManager {
     } else if (process.platform === 'win32') {
       win.setAlwaysOnTop(true, 'screen-saver')
     }
+
+    win.webContents.on('will-navigate', (event, targetUrl) => {
+      if (targetUrl.startsWith('mailto:') || targetUrl.startsWith('https://')) {
+        event.preventDefault()
+        void shell.openExternal(targetUrl)
+      }
+    })
+
+    win.webContents.setWindowOpenHandler(({ url }) => {
+      if (url.startsWith('mailto:') || url.startsWith('https://')) {
+        void shell.openExternal(url)
+      }
+      return { action: 'deny' }
+    })
 
     win.on('blur', () => {
       if (!win.webContents.isDevToolsOpened()) {

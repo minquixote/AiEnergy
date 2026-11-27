@@ -14,6 +14,8 @@ import {
   Terminal
 } from 'lucide-react'
 import {
+  APP_AUTHOR,
+  APP_NAME,
   MOCK_SCENARIOS,
   PROVIDER_META,
   PROVIDER_ORDER,
@@ -923,6 +925,26 @@ export function SettingsView({
           </div>
         </button>
       </section>
+
+      {/* Creator & version attribution */}
+      <div
+        className="flex items-center justify-between gap-2 px-1.5 pb-0.5 text-[10px]"
+        style={{ color: 'var(--text-muted)' }}
+      >
+        <span className="truncate">
+          {APP_NAME} v{appVersion}
+        </span>
+        <span className="shrink-0">
+          제작 {APP_AUTHOR.name} ·{' '}
+          <a
+            href={`mailto:${APP_AUTHOR.email}`}
+            className="underline-offset-2 hover:underline"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            {APP_AUTHOR.email}
+          </a>
+        </span>
+      </div>
     </div>
   )
 }

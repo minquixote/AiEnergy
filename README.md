@@ -59,3 +59,7 @@ npm run dist:mac:arm64 # Apple Silicon macOS .dmg / .zip 패키징 (release/)
 npm run dist:mac       # macOS arm64 + x64 패키징 (release/)
 npm run dist:win       # Windows NSIS / Portable 패키징 (release/)
 ```
+
+## 제작자
+
+- **김영민** ([kimym@me.com](mailto:kimym@me.com))

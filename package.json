@@ -2,7 +2,10 @@
   "name": "ai-energy-bar",
   "version": "0.1.1",
   "description": "Personal AI subscription remaining usage widget for macOS menu bar and Windows system tray",
-  "author": "AI Energy Bar",
+  "author": {
+    "name": "김영민",
+    "email": "kimym@me.com"
+  },
   "type": "module",
   "main": "./out/main/index.js",
   "scripts": {
